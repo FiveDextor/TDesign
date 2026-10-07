@@ -25,6 +25,41 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
+/* ---------- Game / tower helpers ---------- */
+function gameOf(m) {
+  return GAMES[m.game] || { towers: [] };
+}
+
+function slug(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// Image path: the tower's own "img" if set, otherwise images/<game>/<slug>.png
+function towerImg(m, name) {
+  const t = (gameOf(m).towers || []).find(x => x.name === name);
+  if (t && t.img) return t.img;
+  return "images/" + m.game + "/" + slug(name) + ".png";
+}
+
+// "DPS" means whichever loadout slot has the role DPS
+function resolveTower(m, name) {
+  if (name !== "DPS") return name;
+  const slot = m.loadout.find(sl => sl.tower && (sl.role || "").trim().toLowerCase() === "dps");
+  return slot ? slot.tower : "DPS";
+}
+
+function pathCount(m, name) {
+  const real = resolveTower(m, name);
+  const t = (gameOf(m).towers || []).find(x => x.name === real);
+  return (t && t.paths) || 2;
+}
+
+function ensureLoadout(m) {
+  const size = gameOf(m).loadoutSize || 5;
+  if (!Array.isArray(m.loadout)) m.loadout = [];
+  while (m.loadout.length < size) m.loadout.push({ tower: "", role: "" });
+}
+
 /* ---------- State helpers ---------- */
 function normalize() {
   const ids = Object.keys(GAMES);
@@ -33,6 +68,7 @@ function normalize() {
   const knownActions = ACTIONS.map(a => a.id);
   data.maps.forEach(m => {
     if (!m.game) m.game = ids[0];
+    ensureLoadout(m);
     m.steps.forEach(s => {
       // old free-text actions become "Other" with the text kept
       if (s.action && !knownActions.includes(s.action)) {
@@ -95,14 +131,16 @@ function renderSidebar() {
 document.getElementById("addMap").onclick = () => {
   const name = prompt("Map name?");
   if (!name) return;
-  const m = { id: uid(), name, game: data.game, notes: "", steps: [] };
+  const m = { id: uid(), name, game: data.game, notes: "", steps: [], loadout: [] };
+  ensureLoadout(m);
   data.maps.push(m);
   data.current = m.id;
   save(); renderSidebar(); renderMain();
 };
 
-/* ---------- Searchable tower dropdown ---------- */
-function towerPicker(s, towers) {
+/* ---------- Searchable tower dropdown (supports groups) ---------- */
+// groups: [ { title: "Loadout" or null, items: [ { value, label } ] } ]
+function towerPicker(s, groups, onChange) {
   const wrap = el("div", { className: "combo" });
   const input = el("input", { value: s.tower || "", placeholder: "Search tower..." });
   const list = el("div", { className: "combo-list" });
@@ -113,6 +151,7 @@ function towerPicker(s, towers) {
     input.value = value;
     save();
     list.hidden = true;
+    if (onChange) onChange();
   }
 
   function item(label, value) {
@@ -123,17 +162,26 @@ function towerPicker(s, towers) {
     });
   }
 
-  function matchesFor(query) {
+  function filtered(query) {
     const q = query.trim().toLowerCase();
-    return towers.filter(t => t.name.toLowerCase().includes(q));
+    return groups
+      .map(g => ({
+        title: g.title,
+        items: g.items.filter(i =>
+          i.label.toLowerCase().includes(q) || i.value.toLowerCase().includes(q))
+      }))
+      .filter(g => g.items.length);
   }
 
   function renderList(query) {
     list.innerHTML = "";
-    const matches = matchesFor(query);
+    const gs = filtered(query);
     if (!query.trim()) list.append(item("— none —", ""));
-    matches.forEach(t => list.append(item(t.name, t.name)));
-    if (!matches.length) {
+    gs.forEach(g => {
+      if (g.title) list.append(el("div", { className: "combo-title", textContent: g.title }));
+      g.items.forEach(i => list.append(item(i.label, i.value)));
+    });
+    if (!gs.length) {
       list.append(el("div", { className: "combo-empty", textContent: "No match" }));
     }
   }
@@ -149,8 +197,8 @@ function towerPicker(s, towers) {
   };
   input.onkeydown = e => {
     if (e.key === "Enter") {
-      const first = matchesFor(input.value)[0];
-      if (first) choose(first.name);
+      const gs = filtered(input.value);
+      if (gs.length) choose(gs[0].items[0].value);
       input.blur();
     } else if (e.key === "Escape") {
       input.blur();
@@ -165,9 +213,30 @@ function towerPicker(s, towers) {
   return wrap;
 }
 
+function plainGroups(towers) {
+  return [{ title: null, items: towers.map(t => ({ value: t.name, label: t.name })) }];
+}
+
+// Actions: loadout towers (and DPS) first, then every other tower
+function actionGroups(m, towers) {
+  const inLoad = [];
+  m.loadout.forEach(sl => {
+    if (sl.tower && !inLoad.includes(sl.tower)) inLoad.push(sl.tower);
+  });
+  const dps = resolveTower(m, "DPS");
+  const top = [{ value: "DPS", label: dps === "DPS" ? "DPS" : "DPS (" + dps + ")" }]
+    .concat(inLoad.map(n => ({ value: n, label: n })));
+  const rest = towers
+    .filter(t => !inLoad.includes(t.name))
+    .map(t => ({ value: t.name, label: t.name }));
+  return [
+    { title: "Loadout", items: top },
+    { title: "All towers", items: rest }
+  ];
+}
+
 /* ---------- Action fields ---------- */
 function choiceSelect(s, key, options) {
-  // options: [ [value, label], ... ] and the first one is the "nil" choice
   const select = el("select", {
     onchange: e => { s[key] = e.target.value; save(); }
   }, ...options.map(([value, label]) => el("option", { value, textContent: label })));
@@ -175,25 +244,47 @@ function choiceSelect(s, key, options) {
   return select;
 }
 
-function fieldFor(name, s, towers) {
+function levelInput(s, key, max, placeholder) {
+  return el("input", {
+    type: "number", min: 0, max: max, className: "lvl",
+    placeholder: placeholder,
+    value: s[key] === undefined ? "" : s[key],
+    oninput: e => { s[key] = e.target.value; save(); },
+    onchange: e => {
+      let v = e.target.value;
+      if (v !== "") {
+        v = String(Math.max(0, Math.min(max, Math.floor(Number(v)))));
+        e.target.value = v;
+      }
+      s[key] = v;
+      save();
+    }
+  });
+}
+
+function fieldFor(name, s, m, towers) {
   if (name === "tower") {
-    return towerPicker(s, towers);
+    return towerPicker(s, actionGroups(m, towers), () => renderMain());
   }
   if (name === "path") {
-    return choiceSelect(s, "path", [
-      ["", "Path: nil"],
-      ["top", "Top path"],
-      ["bottom", "Bottom path"],
-      ["single", "Single path"]
-    ]);
+    const max = gameOf(m).maxLevel || 5;
+    const box = el("div", { className: "xx" });
+    if (pathCount(m, s.tower) === 1) {
+      box.append(levelInput(s, "single", max, "Lv"));
+    } else {
+      box.append(
+        levelInput(s, "top", max, "Top"),
+        el("span", { textContent: "-" }),
+        levelInput(s, "bottom", max, "Bot")
+      );
+    }
+    return box;
   }
   if (name === "max") {
-    return choiceSelect(s, "max", [
-      ["", "Max: nil"],
-      ["top", "Max top"],
-      ["bottom", "Max bottom"],
-      ["single", "Max single"]
-    ]);
+    const options = pathCount(m, s.tower) === 1
+      ? [["", "Max: nil"], ["single", "Max"]]
+      : [["", "Max: nil"], ["top", "Max top"], ["bottom", "Max bottom"]];
+    return choiceSelect(s, "max", options);
   }
   if (name === "time") {
     return el("input", {
@@ -221,6 +312,43 @@ function actionSelect(s) {
   return select;
 }
 
+/* ---------- Loadout ---------- */
+function renderLoadout(m, towers) {
+  const box = el("div", { className: "loadout" });
+  box.append(el("h3", { textContent: "Loadout" }));
+
+  const size = gameOf(m).loadoutSize || 5;
+  const grid = el("div", { className: "loadout-grid" });
+
+  m.loadout.slice(0, size).forEach(slot => {
+    const card = el("div", { className: "slot" });
+
+    const imgBox = el("div", { className: "slot-img" });
+    if (slot.tower) {
+      imgBox.append(el("img", {
+        src: towerImg(m, slot.tower),
+        alt: slot.tower,
+        onerror: e => { e.target.style.visibility = "hidden"; }
+      }));
+    }
+
+    card.append(
+      imgBox,
+      towerPicker(slot, plainGroups(towers), () => renderMain()),
+      el("input", {
+        className: "role", value: slot.role || "",
+        placeholder: "Role (optional) e.g. DPS",
+        oninput: e => { slot.role = e.target.value; save(); },
+        onchange: () => renderMain()
+      })
+    );
+    grid.append(card);
+  });
+
+  box.append(grid);
+  return box;
+}
+
 /* ---------- Main panel ---------- */
 function renderMain() {
   const main = document.getElementById("main");
@@ -230,6 +358,8 @@ function renderMain() {
     main.append(el("p", { textContent: "Add or select a map to start." }));
     return;
   }
+
+  const towers = gameOf(m).towers || [];
 
   main.append(el("input", {
     id: "mapName", value: m.name,
@@ -241,9 +371,9 @@ function renderMain() {
     oninput: e => { m.notes = e.target.value; save(); }
   }));
 
-  main.append(el("h3", { textContent: "Build order" }));
+  main.append(renderLoadout(m, towers));
 
-  const towers = (GAMES[m.game] && GAMES[m.game].towers) || [];
+  main.append(el("h3", { textContent: "Build order" }));
 
   const table = el("table");
   table.append(el("tr", {},
@@ -264,10 +394,9 @@ function renderMain() {
 
     row.append(el("td", {}, actionSelect(s)));
 
-    // Details: only the fields the chosen action needs
     const def = ACTIONS.find(a => a.id === s.action);
     const details = el("div", { className: "details" });
-    if (def) def.fields.forEach(f => details.append(fieldFor(f, s, towers)));
+    if (def) def.fields.forEach(f => details.append(fieldFor(f, s, m, towers)));
     row.append(el("td", {}, details));
 
     row.append(el("td", {}, el("input", {

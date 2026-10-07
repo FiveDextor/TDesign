@@ -2,6 +2,8 @@
 const GAMES = {
   tdx: {
     name: "Tower Defense X",
+    maxLevel: 5,
+    loadoutSize: 6,
     towers: [
       // Confirmed from the wiki and tier lists
       { name: "AA Turret" },
@@ -71,6 +73,8 @@ const GAMES = {
   },
   custom: {
     name: "Example Game (edit me)",
+    maxLevel: 5,
+    loadoutSize: 5,
     towers: [
       { name: "Example Tower A" },
       { name: "Example Tower B" }

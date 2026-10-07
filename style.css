@@ -217,3 +217,65 @@ select option {
   background-color: var(--field);
   color: var(--text);
 }
+
+.loadout-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.slot {
+  width: 170px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slot-img {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--field);
+  border-radius: 4px;
+}
+
+.slot-img img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.slot .combo {
+  min-width: 0;
+}
+
+.slot .combo input,
+.slot input.role {
+  width: 100%;
+}
+
+.combo-title {
+  padding: 4px 8px;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg);
+  cursor: default;
+}
+
+.xx {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.xx input.lvl {
+  width: 56px;
+  flex: 0 0 56px;
+}
