@@ -21,7 +21,9 @@
   <h2>Tower image helper (TDX)</h2>
   <button id="find">1. Find images</button>
   <button id="zip" disabled>2. Download zip</button>
+  <button id="lines">3. Make games.js lines</button>
   <div id="msg"></div>
+  <textarea id="out" rows="12" style="width:100%;margin-top:12px;background:#1b1b1f;color:#e6e6e6;border:1px solid #35353d"></textarea>
   <div id="grid"></div>
 
 <script>
@@ -127,6 +129,23 @@ document.getElementById("zip").onclick = async () => {
   msg.textContent = "Zip downloaded." +
     (failed.length ? "\nCouldn't download: " + failed.map(f => f.name).join(", ") : "") +
     (lines.length ? "\nSome files aren't .png, so use the lines in img-lines.txt inside the zip." : "");
+};
+document.getElementById("lines").onclick = () => {
+  if (!results.length) {
+    msg.textContent = "Click 1. Find images first.";
+    return;
+  }
+  const out = document.getElementById("out");
+  out.value = towers.map(t => {
+    const r = results.find(x => x.name === t.name);
+    let line = '{ name: "' + t.name + '"';
+    if (t.paths) line += ", paths: " + t.paths;
+    if (r) line += ', img: "' + r.url + '"';
+    return "      " + line + " },";
+  }).join("\n");
+  out.select();
+  document.execCommand("copy");
+  msg.textContent = "Copied! Paste it into games.js (see the steps).";
 };
 </script>
 </body>
