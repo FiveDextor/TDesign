@@ -29,7 +29,19 @@ function el(tag, props = {}, ...kids) {
 function normalize() {
   const ids = Object.keys(GAMES);
   if (!GAMES[data.game]) data.game = ids[0];
-  data.maps.forEach(m => { if (!m.game) m.game = ids[0]; });
+
+  const knownActions = ACTIONS.map(a => a.id);
+  data.maps.forEach(m => {
+    if (!m.game) m.game = ids[0];
+    m.steps.forEach(s => {
+      // old free-text actions become "Other" with the text kept
+      if (s.action && !knownActions.includes(s.action)) {
+        s.text = s.text || s.action;
+        s.action = "other";
+      }
+    });
+  });
+
   const cur = currentMap();
   if (!cur || cur.game !== data.game) {
     const first = mapsForGame()[0];
@@ -128,11 +140,11 @@ function towerPicker(s, towers) {
 
   input.onfocus = () => {
     input.select();
-    renderList("");        // show everything when you click in
+    renderList("");
     list.hidden = false;
   };
   input.oninput = () => {
-    renderList(input.value); // filter as you type
+    renderList(input.value);
     list.hidden = false;
   };
   input.onkeydown = e => {
@@ -146,11 +158,42 @@ function towerPicker(s, towers) {
   };
   input.onblur = () => {
     list.hidden = true;
-    input.value = s.tower || ""; // throw away half-typed text
+    input.value = s.tower || "";
   };
 
   wrap.append(input, list);
   return wrap;
+}
+
+/* ---------- Action fields ---------- */
+function fieldFor(name, s, towers) {
+  if (name === "tower") {
+    return towerPicker(s, towers);
+  }
+  if (name === "time") {
+    return el("input", {
+      className: "time", value: s.time || "", placeholder: "Time e.g. 0:30",
+      oninput: e => { s.time = e.target.value; save(); }
+    });
+  }
+  if (name === "text") {
+    return el("input", {
+      value: s.text || "", placeholder: "Describe the action...",
+      oninput: e => { s.text = e.target.value; save(); }
+    });
+  }
+  return el("span");
+}
+
+function actionSelect(s) {
+  const select = el("select", {
+    onchange: e => { s.action = e.target.value; save(); renderMain(); }
+  },
+    el("option", { value: "", textContent: "— action —" }),
+    ...ACTIONS.map(a => el("option", { value: a.id, textContent: a.label }))
+  );
+  select.value = s.action || "";
+  return select;
 }
 
 /* ---------- Main panel ---------- */
@@ -180,8 +223,8 @@ function renderMain() {
   const table = el("table");
   table.append(el("tr", {},
     el("th", { textContent: "Wave" }),
-    el("th", { textContent: "Tower" }),
     el("th", { textContent: "Action" }),
+    el("th", { textContent: "Details" }),
     el("th", { textContent: "Notes" }),
     el("th", { textContent: "" })
   ));
@@ -194,12 +237,13 @@ function renderMain() {
       oninput: e => { s.wave = e.target.value; save(); }
     })));
 
-    row.append(el("td", {}, towerPicker(s, towers)));
+    row.append(el("td", {}, actionSelect(s)));
 
-    row.append(el("td", {}, el("input", {
-      value: s.action, placeholder: "e.g. Place at chokepoint",
-      oninput: e => { s.action = e.target.value; save(); }
-    })));
+    // Details: only the fields the chosen action needs
+    const def = ACTIONS.find(a => a.id === s.action);
+    const details = el("div", { className: "details" });
+    if (def) def.fields.forEach(f => details.append(fieldFor(f, s, towers)));
+    row.append(el("td", {}, details));
 
     row.append(el("td", {}, el("input", {
       value: s.notes,
@@ -218,7 +262,10 @@ function renderMain() {
 
   main.append(el("button", {
     textContent: "+ Add step",
-    onclick: () => { m.steps.push({ wave: "", tower: "", action: "", notes: "" }); save(); renderMain(); }
+    onclick: () => {
+      m.steps.push({ wave: "", action: "", tower: "", time: "", text: "", notes: "" });
+      save(); renderMain();
+    }
   }));
 
   main.append(el("button", {

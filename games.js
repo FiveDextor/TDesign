@@ -77,3 +77,10 @@ const GAMES = {
     ]
   }
 };
+
+const ACTIONS = [
+  { id: "place",    label: "Place",      fields: ["tower"] },
+  { id: "place_at", label: "Place at",   fields: ["tower", "time"] },
+  { id: "skip",     label: "Skip waves", fields: ["time"] },
+  { id: "other",    label: "Other",      fields: ["text"] }
+];

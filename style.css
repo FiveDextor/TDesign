@@ -158,3 +158,22 @@ td input {
   color: var(--muted);
   cursor: default;
 }
+
+.details {
+  display: flex;
+  gap: 6px;
+}
+
+.details .combo {
+  flex: 1;
+}
+
+.details > input {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.details > input.time {
+  flex: 0 0 120px;
+}
