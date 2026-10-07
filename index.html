@@ -1,1 +1,22 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TD Strategy Notebook</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>Maps</h3>
+    <div id="mapList"></div>
+    <button id="addMap">+ New map</button>
+    <hr>
+    <button id="exportBtn">Export JSON</button>
+    <button id="importBtn">Import JSON</button>
+    <input type="file" id="importFile" accept=".json" hidden>
+  </div>
+  <div id="main"></div>
+</body>
+</html>

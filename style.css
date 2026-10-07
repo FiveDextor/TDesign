@@ -1,0 +1,69 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+}
+
+#sidebar {
+  width: 230px;
+  padding: 12px;
+  border-right: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+#main {
+  flex: 1;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+#sidebar button {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  text-align: left;
+  padding: 6px;
+}
+
+#sidebar button.active {
+  font-weight: bold;
+  background: #ddd;
+}
+
+input,
+textarea {
+  font: inherit;
+  box-sizing: border-box;
+}
+
+#mapName {
+  width: 100%;
+  font-size: 1.3em;
+  margin-bottom: 8px;
+}
+
+#mapNotes {
+  width: 100%;
+  height: 100px;
+  margin-bottom: 16px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+td,
+th {
+  border: 1px solid #ccc;
+  padding: 4px;
+}
+
+td input {
+  width: 100%;
+}
+
+.wave {
+  width: 70px;
+}
