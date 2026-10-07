@@ -1,14 +1,30 @@
+:root {
+  color-scheme: dark;
+  --bg: #121212;
+  --panel: #1b1b1f;
+  --field: #24242a;
+  --border: #35353d;
+  --text: #e6e6e6;
+  --muted: #9a9aa5;
+  --accent: #4f9cff;
+  --hover: #2d2d35;
+  --danger: #ff5c5c;
+}
+
 body {
   font-family: system-ui, sans-serif;
   margin: 0;
   display: flex;
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
 }
 
 #sidebar {
   width: 230px;
   padding: 12px;
-  border-right: 1px solid #ccc;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
   box-sizing: border-box;
 }
 
@@ -16,6 +32,25 @@ body {
   flex: 1;
   padding: 16px;
   box-sizing: border-box;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+button {
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+button:hover {
+  background: var(--hover);
 }
 
 #sidebar button {
@@ -28,13 +63,30 @@ body {
 
 #sidebar button.active {
   font-weight: bold;
-  background: #ddd;
+  background: var(--hover);
+  border-color: var(--accent);
 }
 
 input,
 textarea {
   font: inherit;
   box-sizing: border-box;
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
 }
 
 #mapName {
@@ -52,12 +104,18 @@ textarea {
 table {
   border-collapse: collapse;
   width: 100%;
+  margin-bottom: 10px;
 }
 
 td,
 th {
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   padding: 4px;
+}
+
+th {
+  background: var(--panel);
+  text-align: left;
 }
 
 td input {
