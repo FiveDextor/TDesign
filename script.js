@@ -351,18 +351,27 @@ function renderLoadout(m, towers) {
     const card = el("div", { className: "slot" });
 
     const imgBox = el("div", { className: "slot-img" });
-    if (slot.tower) {
+        if (slot.tower) {
       if (isSpecial(slot.tower)) {
         imgBox.append(specialBadge(slot.tower));
       } else {
-        imgBox.append(el("img", {
-          src: towerImg(m, slot.tower),
-          alt: slot.tower,
-          onerror: () => {
+        const t = towers.find(x => x.name === slot.tower);
+        const tries = ["images/" + m.game + "/" + slug(slot.tower) + ".png"];
+        if (t && t.img) tries.push(t.img);
+        let n = 0;
+        const img = el("img", { alt: slot.tower });
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => {
+          n++;
+          if (n < tries.length) {
+            img.src = tries[n];
+          } else {
             imgBox.innerHTML = "";
             imgBox.append(badge(m, slot.tower));
           }
-        }));
+        };
+        img.src = tries[0];
+        imgBox.append(img);
       }
     }
 
