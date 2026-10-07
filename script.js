@@ -29,7 +29,6 @@ function el(tag, props = {}, ...kids) {
 function normalize() {
   const ids = Object.keys(GAMES);
   if (!GAMES[data.game]) data.game = ids[0];
-  // old maps saved before games existed get the first game
   data.maps.forEach(m => { if (!m.game) m.game = ids[0]; });
   const cur = currentMap();
   if (!cur || cur.game !== data.game) {
@@ -90,6 +89,70 @@ document.getElementById("addMap").onclick = () => {
   save(); renderSidebar(); renderMain();
 };
 
+/* ---------- Searchable tower dropdown ---------- */
+function towerPicker(s, towers) {
+  const wrap = el("div", { className: "combo" });
+  const input = el("input", { value: s.tower || "", placeholder: "Search tower..." });
+  const list = el("div", { className: "combo-list" });
+  list.hidden = true;
+
+  function choose(value) {
+    s.tower = value;
+    input.value = value;
+    save();
+    list.hidden = true;
+  }
+
+  function item(label, value) {
+    return el("div", {
+      className: "combo-item",
+      textContent: label,
+      onmousedown: e => { e.preventDefault(); choose(value); }
+    });
+  }
+
+  function matchesFor(query) {
+    const q = query.trim().toLowerCase();
+    return towers.filter(t => t.name.toLowerCase().includes(q));
+  }
+
+  function renderList(query) {
+    list.innerHTML = "";
+    const matches = matchesFor(query);
+    if (!query.trim()) list.append(item("— none —", ""));
+    matches.forEach(t => list.append(item(t.name, t.name)));
+    if (!matches.length) {
+      list.append(el("div", { className: "combo-empty", textContent: "No match" }));
+    }
+  }
+
+  input.onfocus = () => {
+    input.select();
+    renderList("");        // show everything when you click in
+    list.hidden = false;
+  };
+  input.oninput = () => {
+    renderList(input.value); // filter as you type
+    list.hidden = false;
+  };
+  input.onkeydown = e => {
+    if (e.key === "Enter") {
+      const first = matchesFor(input.value)[0];
+      if (first) choose(first.name);
+      input.blur();
+    } else if (e.key === "Escape") {
+      input.blur();
+    }
+  };
+  input.onblur = () => {
+    list.hidden = true;
+    input.value = s.tower || ""; // throw away half-typed text
+  };
+
+  wrap.append(input, list);
+  return wrap;
+}
+
 /* ---------- Main panel ---------- */
 function renderMain() {
   const main = document.getElementById("main");
@@ -113,9 +176,6 @@ function renderMain() {
   main.append(el("h3", { textContent: "Build order" }));
 
   const towers = (GAMES[m.game] && GAMES[m.game].towers) || [];
-  const dl = el("datalist", { id: "towerList" });
-  towers.forEach(t => dl.append(el("option", { value: t.name })));
-  main.append(dl);
 
   const table = el("table");
   table.append(el("tr", {},
@@ -134,17 +194,7 @@ function renderMain() {
       oninput: e => { s.wave = e.target.value; save(); }
     })));
 
-    // Tower dropdown. If a saved tower is no longer in the list, keep it visible.
-    const names = towers.map(t => t.name);
-    if (s.tower && !names.includes(s.tower)) names.push(s.tower);
-    const select = el("select", {
-      onchange: e => { s.tower = e.target.value; save(); }
-    },
-      el("option", { value: "", textContent: "—" }),
-      ...names.map(n => el("option", { value: n, textContent: n }))
-    );
-    select.value = s.tower || "";
-    row.append(el("td", {}, select));
+    row.append(el("td", {}, towerPicker(s, towers)));
 
     row.append(el("td", {}, el("input", {
       value: s.action, placeholder: "e.g. Place at chokepoint",
@@ -161,13 +211,6 @@ function renderMain() {
       el("button", { textContent: "↓", onclick: () => moveStep(m, i, 1) }),
       el("button", { textContent: "✕", onclick: () => { m.steps.splice(i, 1); save(); renderMain(); } })
     ));
-
-        const towerInput = el("input", {
-      value: s.tower || "", placeholder: "Search tower...",
-      oninput: e => { s.tower = e.target.value; save(); }
-    });
-    towerInput.setAttribute("list", "towerList");
-    row.append(el("td", {}, towerInput));
 
     table.append(row);
   });

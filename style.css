@@ -125,3 +125,36 @@ td input {
 .wave {
   width: 70px;
 }
+
+.combo {
+  position: relative;
+  min-width: 170px;
+}
+
+.combo-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 10;
+}
+
+.combo-item,
+.combo-empty {
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.combo-item:hover {
+  background: var(--hover);
+}
+
+.combo-empty {
+  color: var(--muted);
+  cursor: default;
+}
