@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tower image helper</title>
+<script src="games.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; background: #121212; color: #e6e6e6; padding: 20px; }
+  button { background: #24242a; color: #e6e6e6; border: 1px solid #35353d; border-radius: 4px; padding: 8px 14px; cursor: pointer; margin-right: 8px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .card { width: 150px; padding: 8px; background: #1b1b1f; border: 1px solid #35353d; border-radius: 6px; font-size: 0.85em; }
+  .card img { display: block; width: 64px; height: 64px; object-fit: contain; margin-bottom: 6px; }
+  .name { font-weight: bold; }
+  .status { color: #9a9aa5; word-break: break-all; }
+  #msg { margin-top: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h2>Tower image helper (TDX)</h2>
+  <button id="find">1. Find images</button>
+  <button id="zip" disabled>2. Download zip</button>
+  <div id="msg"></div>
+  <div id="grid"></div>
+
+<script>
+const towers = GAMES.tdx.towers;
+const grid = document.getElementById("grid");
+const msg = document.getElementById("msg");
+const results = [];
+
+function slug(n) {
+  return n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+async function findUrl(name) {
+  const params = new URLSearchParams({
+    action: "query", titles: name, prop: "pageimages", piprop: "original",
+    format: "json", redirects: "1", origin: "*"
+  });
+  const r = await fetch("https://tdx.fandom.com/api.php?" + params);
+  const d = await r.json();
+  const pages = (d.query && d.query.pages) || {};
+  for (const p of Object.values(pages)) {
+    if (p.original) return p.original.source;
+  }
+  return null;
+}
+
+document.getElementById("find").onclick = async () => {
+  grid.innerHTML = "";
+  results.length = 0;
+  msg.textContent = "Looking up images... this takes about a minute.";
+
+  for (const t of towers) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const nameEl = document.createElement("div");
+    nameEl.className = "name";
+    nameEl.textContent = t.name;
+    const status = document.createElement("div");
+    status.className = "status";
+    card.append(nameEl, status);
+    grid.append(card);
+
+    try {
+      const url = await findUrl(t.name);
+      if (!url) {
+        status.textContent = "no image found";
+      } else {
+        const path = new URL(url).pathname.split("/revision")[0];
+        const m = path.match(/\.[a-z0-9]+$/i);
+        const ext = m ? m[0].toLowerCase() : ".png";
+        const filename = slug(t.name) + ext;
+        const img = document.createElement("img");
+        img.src = url;
+        card.prepend(img);
+        results.push({ name: t.name, url, filename, ext });
+        status.textContent = filename;
+      }
+    } catch (e) {
+      status.textContent = "lookup failed";
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  msg.textContent = "Found " + results.length + " of " + towers.length +
+    " images. Check the pictures, then click Download zip.";
+  document.getElementById("zip").disabled = results.length === 0;
+};
+
+document.getElementById("zip").onclick = async () => {
+  msg.textContent = "Downloading images into a zip...";
+  const zip = new JSZip();
+  const failed = [];
+  const lines = [];
+
+  for (const r of results) {
+    try {
+      const resp = await fetch(r.url);
+      if (!resp.ok) throw new Error("bad response");
+      zip.file(r.filename, await resp.blob());
+      if (r.ext !== ".png") {
+        lines.push('{ name: "' + r.name + '", img: "images/tdx/' + r.filename + '" },');
+      }
+    } catch (e) {
+      failed.push(r);
+    }
+  }
+
+  if (lines.length) zip.file("img-lines.txt", lines.join("\n"));
+
+  if (failed.length === results.length) {
+    msg.textContent =
+      "The browser blocked the downloads. Use the manual way: right-click each picture below, " +
+      "choose Save image as, and use the file name shown under it.";
+    return;
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tdx-images.zip";
+  a.click();
+
+  msg.textContent = "Zip downloaded." +
+    (failed.length ? "\nCouldn't download: " + failed.map(f => f.name).join(", ") : "") +
+    (lines.length ? "\nSome files aren't .png, so use the lines in img-lines.txt inside the zip." : "");
+};
+</script>
+</body>
+</html>

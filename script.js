@@ -312,6 +312,24 @@ function actionSelect(s) {
   return select;
 }
 
+// Fallback shown when a tower has no image yet
+function badge(m, name) {
+  const words = name.split(/\s+/).filter(Boolean);
+  const text = (words.length > 1
+    ? words.map(w => w[0]).join("").slice(0, 3)
+    : name.slice(0, 3)).toUpperCase();
+
+  let hue = 0;
+  for (const c of name) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+
+  return el("div", {
+    className: "badge",
+    textContent: text,
+    title: "Add image: " + towerImg(m, name),
+    style: "background: hsl(" + hue + ", 45%, 32%)"
+  });
+}
+
 /* ---------- Loadout ---------- */
 function renderLoadout(m, towers) {
   const box = el("div", { className: "loadout" });
@@ -328,7 +346,10 @@ function renderLoadout(m, towers) {
       imgBox.append(el("img", {
         src: towerImg(m, slot.tower),
         alt: slot.tower,
-        onerror: e => { e.target.style.visibility = "hidden"; }
+        onerror: () => {
+          imgBox.innerHTML = "";
+          imgBox.append(badge(m, slot.tower));
+        }
       }));
     }
 

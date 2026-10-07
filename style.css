@@ -279,3 +279,16 @@ select option {
   width: 56px;
   flex: 0 0 56px;
 }
+
+.badge {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: bold;
+  font-size: 1.2em;
+  letter-spacing: 1px;
+}
