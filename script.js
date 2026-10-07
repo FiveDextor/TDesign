@@ -1,3 +1,5 @@
+const SPECIAL_SLOTS = ["DPS", "Bait", "Empty"]; // extra choices in the loadout
+
 const KEY = "td-strategy-v1";
 let data = load();
 normalize();
@@ -30,6 +32,10 @@ function gameOf(m) {
   return GAMES[m.game] || { towers: [] };
 }
 
+function isSpecial(name) {
+  return SPECIAL_SLOTS.includes(name);
+}
+
 function slug(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -41,23 +47,15 @@ function towerImg(m, name) {
   return "images/" + m.game + "/" + slug(name) + ".png";
 }
 
-// "DPS" means whichever loadout slot has the role DPS
-function resolveTower(m, name) {
-  if (name !== "DPS") return name;
-  const slot = m.loadout.find(sl => sl.tower && (sl.role || "").trim().toLowerCase() === "dps");
-  return slot ? slot.tower : "DPS";
-}
-
 function pathCount(m, name) {
-  const real = resolveTower(m, name);
-  const t = (gameOf(m).towers || []).find(x => x.name === real);
+  const t = (gameOf(m).towers || []).find(x => x.name === name);
   return (t && t.paths) || 2;
 }
 
 function ensureLoadout(m) {
   const size = gameOf(m).loadoutSize || 5;
   if (!Array.isArray(m.loadout)) m.loadout = [];
-  while (m.loadout.length < size) m.loadout.push({ tower: "", role: "" });
+  while (m.loadout.length < size) m.loadout.push({ tower: "" });
 }
 
 /* ---------- State helpers ---------- */
@@ -213,18 +211,21 @@ function towerPicker(s, groups, onChange) {
   return wrap;
 }
 
-function plainGroups(towers) {
-  return [{ title: null, items: towers.map(t => ({ value: t.name, label: t.name })) }];
+// Loadout slots: DPS / Bait / Empty first, then every tower
+function loadoutGroups(towers) {
+  return [
+    { title: "Placeholders", items: SPECIAL_SLOTS.map(n => ({ value: n, label: n })) },
+    { title: "Towers", items: towers.map(t => ({ value: t.name, label: t.name })) }
+  ];
 }
 
-// Actions: loadout towers (and DPS) first, then every other tower
+// Actions: DPS and loadout towers first, then every other tower (no Bait / Empty)
 function actionGroups(m, towers) {
   const inLoad = [];
   m.loadout.forEach(sl => {
-    if (sl.tower && !inLoad.includes(sl.tower)) inLoad.push(sl.tower);
+    if (sl.tower && !isSpecial(sl.tower) && !inLoad.includes(sl.tower)) inLoad.push(sl.tower);
   });
-  const dps = resolveTower(m, "DPS");
-  const top = [{ value: "DPS", label: dps === "DPS" ? "DPS" : "DPS (" + dps + ")" }]
+  const top = [{ value: "DPS", label: "DPS" }]
     .concat(inLoad.map(n => ({ value: n, label: n })));
   const rest = towers
     .filter(t => !inLoad.includes(t.name))
@@ -312,7 +313,8 @@ function actionSelect(s) {
   return select;
 }
 
-// Fallback shown when a tower has no image yet
+/* ---------- Loadout ---------- */
+// Fallback when a tower has no image yet
 function badge(m, name) {
   const words = name.split(/\s+/).filter(Boolean);
   const text = (words.length > 1
@@ -330,7 +332,14 @@ function badge(m, name) {
   });
 }
 
-/* ---------- Loadout ---------- */
+// DPS / Bait / Empty get a plain labeled badge
+function specialBadge(name) {
+  return el("div", {
+    className: "badge special badge-" + name.toLowerCase(),
+    textContent: name.toUpperCase()
+  });
+}
+
 function renderLoadout(m, towers) {
   const box = el("div", { className: "loadout" });
   box.append(el("h3", { textContent: "Loadout" }));
@@ -343,25 +352,23 @@ function renderLoadout(m, towers) {
 
     const imgBox = el("div", { className: "slot-img" });
     if (slot.tower) {
-      imgBox.append(el("img", {
-        src: towerImg(m, slot.tower),
-        alt: slot.tower,
-        onerror: () => {
-          imgBox.innerHTML = "";
-          imgBox.append(badge(m, slot.tower));
-        }
-      }));
+      if (isSpecial(slot.tower)) {
+        imgBox.append(specialBadge(slot.tower));
+      } else {
+        imgBox.append(el("img", {
+          src: towerImg(m, slot.tower),
+          alt: slot.tower,
+          onerror: () => {
+            imgBox.innerHTML = "";
+            imgBox.append(badge(m, slot.tower));
+          }
+        }));
+      }
     }
 
     card.append(
       imgBox,
-      towerPicker(slot, plainGroups(towers), () => renderMain()),
-      el("input", {
-        className: "role", value: slot.role || "",
-        placeholder: "Role (optional) e.g. DPS",
-        oninput: e => { slot.role = e.target.value; save(); },
-        onchange: () => renderMain()
-      })
+      towerPicker(slot, loadoutGroups(towers), () => renderMain())
     );
     grid.append(card);
   });
