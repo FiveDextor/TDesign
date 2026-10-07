@@ -113,6 +113,9 @@ function renderMain() {
   main.append(el("h3", { textContent: "Build order" }));
 
   const towers = (GAMES[m.game] && GAMES[m.game].towers) || [];
+  const dl = el("datalist", { id: "towerList" });
+  towers.forEach(t => dl.append(el("option", { value: t.name })));
+  main.append(dl);
 
   const table = el("table");
   table.append(el("tr", {},
@@ -158,6 +161,13 @@ function renderMain() {
       el("button", { textContent: "↓", onclick: () => moveStep(m, i, 1) }),
       el("button", { textContent: "✕", onclick: () => { m.steps.splice(i, 1); save(); renderMain(); } })
     ));
+
+        const towerInput = el("input", {
+      value: s.tower || "", placeholder: "Search tower...",
+      oninput: e => { s.tower = e.target.value; save(); }
+    });
+    towerInput.setAttribute("list", "towerList");
+    row.append(el("td", {}, towerInput));
 
     table.append(row);
   });
