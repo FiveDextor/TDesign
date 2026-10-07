@@ -1,12 +1,13 @@
 const KEY = "td-strategy-v1";
 let data = load();
+normalize();
 
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
     if (d && Array.isArray(d.maps)) return d;
   } catch (e) {}
-  return { maps: [], current: null };
+  return { maps: [], current: null, game: null };
 }
 
 function save() {
@@ -24,15 +25,54 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
+/* ---------- State helpers ---------- */
+function normalize() {
+  const ids = Object.keys(GAMES);
+  if (!GAMES[data.game]) data.game = ids[0];
+  // old maps saved before games existed get the first game
+  data.maps.forEach(m => { if (!m.game) m.game = ids[0]; });
+  const cur = currentMap();
+  if (!cur || cur.game !== data.game) {
+    const first = mapsForGame()[0];
+    data.current = first ? first.id : null;
+  }
+}
+
 function currentMap() {
   return data.maps.find(m => m.id === data.current) || null;
+}
+
+function mapsForGame() {
+  return data.maps.filter(m => m.game === data.game);
+}
+
+function renderAll() {
+  renderGames();
+  renderSidebar();
+  renderMain();
+}
+
+/* ---------- Game picker ---------- */
+function renderGames() {
+  const sel = document.getElementById("gameSelect");
+  sel.innerHTML = "";
+  Object.keys(GAMES).forEach(id => {
+    sel.append(el("option", { value: id, textContent: GAMES[id].name }));
+  });
+  sel.value = data.game;
+  sel.onchange = () => {
+    data.game = sel.value;
+    normalize();
+    save();
+    renderAll();
+  };
 }
 
 /* ---------- Sidebar ---------- */
 function renderSidebar() {
   const list = document.getElementById("mapList");
   list.innerHTML = "";
-  data.maps.forEach(m => {
+  mapsForGame().forEach(m => {
     list.append(el("button", {
       textContent: m.name || "(unnamed)",
       className: m.id === data.current ? "active" : "",
@@ -44,7 +84,7 @@ function renderSidebar() {
 document.getElementById("addMap").onclick = () => {
   const name = prompt("Map name?");
   if (!name) return;
-  const m = { id: uid(), name, notes: "", steps: [] };
+  const m = { id: uid(), name, game: data.game, notes: "", steps: [] };
   data.maps.push(m);
   data.current = m.id;
   save(); renderSidebar(); renderMain();
@@ -72,9 +112,12 @@ function renderMain() {
 
   main.append(el("h3", { textContent: "Build order" }));
 
+  const towers = (GAMES[m.game] && GAMES[m.game].towers) || [];
+
   const table = el("table");
   table.append(el("tr", {},
     el("th", { textContent: "Wave" }),
+    el("th", { textContent: "Tower" }),
     el("th", { textContent: "Action" }),
     el("th", { textContent: "Notes" }),
     el("th", { textContent: "" })
@@ -82,38 +125,56 @@ function renderMain() {
 
   m.steps.forEach((s, i) => {
     const row = el("tr");
+
     row.append(el("td", {}, el("input", {
       className: "wave", value: s.wave,
       oninput: e => { s.wave = e.target.value; save(); }
     })));
+
+    // Tower dropdown. If a saved tower is no longer in the list, keep it visible.
+    const names = towers.map(t => t.name);
+    if (s.tower && !names.includes(s.tower)) names.push(s.tower);
+    const select = el("select", {
+      onchange: e => { s.tower = e.target.value; save(); }
+    },
+      el("option", { value: "", textContent: "—" }),
+      ...names.map(n => el("option", { value: n, textContent: n }))
+    );
+    select.value = s.tower || "";
+    row.append(el("td", {}, select));
+
     row.append(el("td", {}, el("input", {
-      value: s.action, placeholder: "e.g. Build sniper at chokepoint",
+      value: s.action, placeholder: "e.g. Place at chokepoint",
       oninput: e => { s.action = e.target.value; save(); }
     })));
+
     row.append(el("td", {}, el("input", {
       value: s.notes,
       oninput: e => { s.notes = e.target.value; save(); }
     })));
+
     row.append(el("td", {},
       el("button", { textContent: "↑", onclick: () => moveStep(m, i, -1) }),
       el("button", { textContent: "↓", onclick: () => moveStep(m, i, 1) }),
       el("button", { textContent: "✕", onclick: () => { m.steps.splice(i, 1); save(); renderMain(); } })
     ));
+
     table.append(row);
   });
   main.append(table);
 
   main.append(el("button", {
     textContent: "+ Add step",
-    onclick: () => { m.steps.push({ wave: "", action: "", notes: "" }); save(); renderMain(); }
+    onclick: () => { m.steps.push({ wave: "", tower: "", action: "", notes: "" }); save(); renderMain(); }
   }));
+
   main.append(el("button", {
     textContent: "Delete this map",
     onclick: () => {
       if (!confirm("Delete this map?")) return;
       data.maps = data.maps.filter(x => x.id !== m.id);
-      data.current = data.maps.length ? data.maps[0].id : null;
-      save(); renderSidebar(); renderMain();
+      normalize();
+      save(); renderAll();
     }
   }));
 }
@@ -145,8 +206,8 @@ document.getElementById("importFile").onchange = e => {
       if (!d || !Array.isArray(d.maps)) throw new Error("Bad format");
       if (!confirm("This replaces everything currently in the site. Continue?")) return;
       data = d;
-      if (!currentMap()) data.current = data.maps.length ? data.maps[0].id : null;
-      save(); renderSidebar(); renderMain();
+      normalize();
+      save(); renderAll();
     } catch (err) {
       alert("Couldn't import that file.");
     }
@@ -155,5 +216,4 @@ document.getElementById("importFile").onchange = e => {
   e.target.value = "";
 };
 
-renderSidebar();
-renderMain();
+renderAll();
