@@ -166,9 +166,34 @@ function towerPicker(s, towers) {
 }
 
 /* ---------- Action fields ---------- */
+function choiceSelect(s, key, options) {
+  // options: [ [value, label], ... ] and the first one is the "nil" choice
+  const select = el("select", {
+    onchange: e => { s[key] = e.target.value; save(); }
+  }, ...options.map(([value, label]) => el("option", { value, textContent: label })));
+  select.value = s[key] || "";
+  return select;
+}
+
 function fieldFor(name, s, towers) {
   if (name === "tower") {
     return towerPicker(s, towers);
+  }
+  if (name === "path") {
+    return choiceSelect(s, "path", [
+      ["", "Path: nil"],
+      ["top", "Top path"],
+      ["bottom", "Bottom path"],
+      ["single", "Single path"]
+    ]);
+  }
+  if (name === "max") {
+    return choiceSelect(s, "max", [
+      ["", "Max: nil"],
+      ["top", "Max top"],
+      ["bottom", "Max bottom"],
+      ["single", "Max single"]
+    ]);
   }
   if (name === "time") {
     return el("input", {

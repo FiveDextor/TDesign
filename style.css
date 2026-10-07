@@ -177,3 +177,43 @@ td input {
 .details > input.time {
   flex: 0 0 120px;
 }
+
+.details > select {
+  width: auto;
+  flex: 0 0 120px;
+}
+
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+select {
+  font: inherit;
+  color: var(--text);
+  background-color: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 26px 4px 8px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%239a9aa5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+select:hover {
+  background-color: var(--hover);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+select option {
+  background-color: var(--field);
+  color: var(--text);
+}
