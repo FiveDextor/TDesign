@@ -104,6 +104,7 @@ const GAMES = {
       { name: "Junction", img: "https://static.wikia.nocookie.net/tdx/images/7/75/JunctionTopView.png/revision/latest/scale-to-width-down/1000?cb=20240929034544" },
       { name: "Lava World" },
       { name: "Limbo", img: "https://static.wikia.nocookie.net/tdx/images/b/b2/LimboTopView.png/revision/latest/scale-to-width-down/1000?cb=20240624183627" },
+      { name: "Midnight Road", img: "https://static.wikia.nocookie.net/tdx/images/0/0e/MidnightRoadTopView.png/revision/latest/scale-to-width-down/1000?cb=20240624183901" },
       { name: "Military Base", img: "https://static.wikia.nocookie.net/tdx/images/5/59/MilitaryHQTopView.png/revision/latest/scale-to-width-down/1000?cb=20240717064929" },
       { name: "Military Harbor", img: "https://static.wikia.nocookie.net/tdx/images/0/0c/Harbor_Top_Down_View_%28Main%29.png/revision/latest/scale-to-width-down/1000?cb=20230622203114" },
       { name: "Misleading Pond", img: "https://static.wikia.nocookie.net/tdx/images/9/91/MisleadingPondTopView.png/revision/latest/scale-to-width-down/1000?cb=20240624184121" },
