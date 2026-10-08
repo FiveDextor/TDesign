@@ -374,3 +374,119 @@ canvas.paint {
   touch-action: none;
   cursor: crosshair;
 }
+
+/* red "Confirm?" state for dangerous buttons */
+button.danger {
+  background: #4a1d1d;
+  border-color: var(--danger);
+  color: #ffd6d6;
+}
+
+button.danger:hover {
+  background: #5e2424;
+}
+
+button.primary {
+  background: #1f3a5f;
+  border-color: var(--accent);
+}
+
+button.primary:hover {
+  background: #264a7a;
+}
+
+/* pop-up window */
+.modal-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 360px;
+  max-width: 90%;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.modal h3 {
+  margin: 0 0 8px;
+}
+
+.modal p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.modal-input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* action color picker */
+.colorpick {
+  position: relative;
+}
+
+.swatch-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.swatch-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  width: 180px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  z-index: 20;
+}
+
+.swatch-label {
+  font-size: 0.75em;
+  color: var(--muted);
+  margin: 4px 0 4px;
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.swatch.sel {
+  border-color: #fff;
+}
+
+.swatch-none {
+  width: 100%;
+  margin-top: 8px;
+}

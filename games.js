@@ -159,12 +159,12 @@ const GAMES = {
 };
 
 const ACTIONS = [
-  { id: "place",      label: "Place",       fields: ["tower", "path", "max"] },
-  { id: "place_at",   label: "Place at",    fields: ["tower", "path", "max", "time"] },
-  { id: "upgrade",    label: "Upgrade",     fields: ["tower", "path", "max"] },
-  { id: "upgrade_at", label: "Upgrade at",  fields: ["tower", "path", "max", "time"] },
-  { id: "sell",       label: "Sell",        fields: ["tower"] },
-  { id: "sell_at",    label: "Sell at",     fields: ["tower", "time"] },
+  { id: "place",      label: "Place",       fields: ["tower", "path", "max", "color"] },
+  { id: "place_at",   label: "Place at",    fields: ["tower", "path", "max", "time", "color"] },
+  { id: "upgrade",    label: "Upgrade",     fields: ["tower", "path", "max", "color"] },
+  { id: "upgrade_at", label: "Upgrade at",  fields: ["tower", "path", "max", "time", "color"] },
+  { id: "sell",       label: "Sell",        fields: ["tower", "color"] },
+  { id: "sell_at",    label: "Sell at",     fields: ["tower", "time", "color"] },
   { id: "skip",       label: "Skip waves",  fields: ["time"] },
   { id: "other",      label: "Other",       fields: ["text"] }
 ];

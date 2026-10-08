@@ -7,6 +7,9 @@ const SUB_ROLES = [
   ["bait", "Bait"]
 ];
 
+// Colors offered after the ones drawn on the map
+const PALETTE = ["#ff4d4d", "#ffa94d", "#ffe14d", "#5ee26b", "#4dd2ff", "#4d7bff", "#b84dff", "#ff4da6", "#ffffff"];
+
 // Remembered between redraws so your brush settings don't reset
 let paintTool = { t: "brush", c: "#ff4d4d", s: 14 };
 
@@ -35,6 +38,87 @@ function el(tag, props = {}, ...kids) {
   Object.assign(e, props);
   kids.forEach(k => e.append(k));
   return e;
+}
+
+/* ---------- Pop-ups and confirm buttons ---------- */
+// Returns a Promise: the typed text (if input), true (OK), or null (cancelled)
+function openModal({ title, text, input, ok = "OK", cancel = true, danger = false }) {
+  return new Promise(resolve => {
+    const overlay = el("div", { className: "modal-overlay" });
+    const box = el("div", { className: "modal" });
+    box.append(el("h3", { textContent: title }));
+    if (text) box.append(el("p", { textContent: text }));
+
+    let field = null;
+    if (input) {
+      field = el("input", { type: "text", placeholder: input, className: "modal-input" });
+      box.append(field);
+    }
+
+    function close(value) {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(value);
+    }
+
+    const okBtn = el("button", {
+      textContent: ok,
+      className: danger ? "danger" : "primary",
+      onclick: () => {
+        if (field) {
+          const v = field.value.trim();
+          if (!v) { field.focus(); return; }
+          close(v);
+        } else {
+          close(true);
+        }
+      }
+    });
+
+    const buttons = el("div", { className: "modal-buttons" });
+    if (cancel) buttons.append(el("button", { textContent: "Cancel", onclick: () => close(null) }));
+    buttons.append(okBtn);
+    box.append(buttons);
+
+    function onKey(e) {
+      if (e.key === "Escape" && cancel) close(null);
+      if (e.key === "Enter" && e.target.tagName !== "BUTTON") okBtn.click();
+    }
+    document.addEventListener("keydown", onKey);
+    overlay.onmousedown = e => { if (e.target === overlay && cancel) close(null); };
+
+    overlay.append(box);
+    document.body.append(overlay);
+    if (field) field.focus(); else okBtn.focus();
+  });
+}
+
+// Button that turns red and says "Confirm?" on the first click
+function confirmButton(label, onConfirm) {
+  let armed = false;
+  let timer = null;
+  const b = el("button", { textContent: label });
+
+  function disarm() {
+    armed = false;
+    clearTimeout(timer);
+    b.textContent = label;
+    b.classList.remove("danger");
+  }
+
+  b.onclick = () => {
+    if (!armed) {
+      armed = true;
+      b.textContent = "Confirm?";
+      b.classList.add("danger");
+      timer = setTimeout(disarm, 3000);
+    } else {
+      disarm();
+      onConfirm();
+    }
+  };
+  b.onblur = disarm;
+  return b;
 }
 
 /* ---------- Game / tower helpers ---------- */
@@ -67,6 +151,15 @@ function ensureLoadout(m) {
   const size = gameOf(m).loadoutSize || 5;
   if (!Array.isArray(m.loadout)) m.loadout = [];
   while (m.loadout.length < size) m.loadout.push({ tower: "" });
+}
+
+// Colors used in this strategy's painting, in the order they were first used
+function drawnColors(m) {
+  const seen = [];
+  (m.paint || []).forEach(st => {
+    if (st.t !== "erase" && st.c && !seen.includes(st.c)) seen.push(st.c);
+  });
+  return seen;
 }
 
 /* ---------- State helpers ---------- */
@@ -139,8 +232,13 @@ function renderSidebar() {
   });
 }
 
-document.getElementById("addMap").onclick = () => {
-  const name = prompt("Strategy name?");
+document.getElementById("addMap").onclick = async () => {
+  const name = await openModal({
+    title: "New strategy",
+    text: "Give your strategy a name.",
+    input: "Strategy name",
+    ok: "Create"
+  });
   if (!name) return;
   const m = {
     id: uid(), name, game: data.game, map: "",
@@ -281,6 +379,64 @@ function levelInput(s, key, max, placeholder) {
   });
 }
 
+// Round color button; the popup lists colors drawn on the map first
+function colorPicker(s, m) {
+  const wrap = el("div", { className: "colorpick" });
+  const btn = el("button", {
+    className: "swatch-btn", title: "Color", textContent: s.color ? "" : "—"
+  });
+  if (s.color) btn.style.background = s.color;
+  const pop = el("div", { className: "swatch-pop" });
+  pop.hidden = true;
+
+  function pick(c) { s.color = c; save(); renderMain(); }
+
+  function swatch(c) {
+    const b = el("button", {
+      className: "swatch" + (s.color === c ? " sel" : ""), title: c
+    });
+    b.style.background = c;
+    b.onclick = () => pick(c);
+    return b;
+  }
+
+  function buildPop() {
+    pop.innerHTML = "";
+    const drawn = drawnColors(m);
+    if (drawn.length) {
+      pop.append(el("div", { className: "swatch-label", textContent: "From your map" }));
+      const row = el("div", { className: "swatch-row" });
+      drawn.forEach(c => row.append(swatch(c)));
+      pop.append(row);
+    }
+    pop.append(el("div", {
+      className: "swatch-label", textContent: drawn.length ? "Other colors" : "Colors"
+    }));
+    const row2 = el("div", { className: "swatch-row" });
+    PALETTE.filter(c => !drawn.includes(c)).forEach(c => row2.append(swatch(c)));
+    pop.append(row2);
+    pop.append(el("button", {
+      className: "swatch-none", textContent: "No color", onclick: () => pick("")
+    }));
+  }
+
+  function outside(e) { if (!wrap.contains(e.target)) close(); }
+  function close() {
+    pop.hidden = true;
+    document.removeEventListener("mousedown", outside);
+  }
+
+  btn.onclick = () => {
+    if (!pop.hidden) { close(); return; }
+    buildPop();
+    pop.hidden = false;
+    document.addEventListener("mousedown", outside);
+  };
+
+  wrap.append(btn, pop);
+  return wrap;
+}
+
 function fieldFor(name, s, m, towers) {
   if (name === "tower") {
     return towerPicker(s, actionGroups(m, towers), () => renderMain());
@@ -304,6 +460,9 @@ function fieldFor(name, s, m, towers) {
       ? [["", "Max: nil"], ["single", "Max"]]
       : [["", "Max: nil"], ["top", "Max top"], ["bottom", "Max bottom"]];
     return choiceSelect(s, "max", options);
+  }
+  if (name === "color") {
+    return colorPicker(s, m);
   }
   if (name === "time") {
     return el("input", {
@@ -382,14 +541,8 @@ function renderBoard(m) {
       textContent: "Undo",
       onclick: () => { m.paint.pop(); save(); redraw(); }
     }),
-    el("button", {
-      textContent: "Clear",
-      onclick: () => {
-        if (!m.paint.length || !confirm("Clear all painting on this strategy?")) return;
-        m.paint = [];
-        save(); redraw();
-      }
-    })
+    confirmButton("Clear", () => { m.paint = []; save(); redraw(); }),
+    el("span", { className: "hint", textContent: "Hold Shift for straight lines" })
   );
   wrap.append(bar);
 
@@ -491,20 +644,31 @@ function renderBoard(m) {
   }
 
   let live = null;
+  let straightFrom = -1; // where the current Shift (straight) segment starts
 
   canvas.onpointerdown = e => {
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
     live = { t: paintTool.t, c: paintTool.c, s: paintTool.s, p: [pos(e)] };
+    straightFrom = -1;
     redraw(live);
   };
 
   canvas.onpointermove = e => {
     if (!live) return;
     const p = pos(e);
-    const last = live.p[live.p.length - 1];
-    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 0.002) return;
-    live.p.push(p);
+
+    if (e.shiftKey) {
+      // straight line from where Shift was pressed to the pointer
+      if (straightFrom === -1) straightFrom = live.p.length - 1;
+      live.p = live.p.slice(0, straightFrom + 1);
+      live.p.push(p);
+    } else {
+      straightFrom = -1;
+      const last = live.p[live.p.length - 1];
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 0.002) return;
+      live.p.push(p);
+    }
     redraw(live);
   };
 
@@ -512,7 +676,8 @@ function renderBoard(m) {
     if (!live) return;
     const st = live;
     live = null;
-    if (st.t === "lasso" && st.p.length < 3) { redraw(); return; }
+    straightFrom = -1;
+    if (st.t === "lasso" && st.p.length < 2) { redraw(); return; }
     m.paint.push(st);
     save();
     redraw();
@@ -657,10 +822,11 @@ function renderMain() {
   m.steps.forEach((s, i) => {
     const row = el("tr");
 
-    row.append(el("td", {}, el("input", {
+    const waveTd = el("td", {}, el("input", {
       className: "wave", value: s.wave,
       oninput: e => { s.wave = e.target.value; save(); }
-    })));
+    }));
+    row.append(waveTd);
 
     row.append(el("td", {}, actionSelect(s)));
 
@@ -668,6 +834,11 @@ function renderMain() {
     const details = el("div", { className: "details" });
     if (def) def.fields.forEach(f => details.append(fieldFor(f, s, m, towers)));
     row.append(el("td", {}, details));
+
+    // colored bar on the left edge of rows that have a color
+    if (def && def.fields.includes("color") && s.color) {
+      waveTd.style.boxShadow = "inset 5px 0 0 " + s.color;
+    }
 
     row.append(el("td", {}, el("input", {
       value: s.notes,
@@ -687,19 +858,15 @@ function renderMain() {
   main.append(el("button", {
     textContent: "+ Add step",
     onclick: () => {
-      m.steps.push({ wave: "", action: "", tower: "", time: "", text: "", notes: "" });
+      m.steps.push({ wave: "", action: "", tower: "", time: "", text: "", color: "", notes: "" });
       save(); renderMain();
     }
   }));
 
-  main.append(el("button", {
-    textContent: "Delete this strategy",
-    onclick: () => {
-      if (!confirm("Delete this strategy?")) return;
-      data.maps = data.maps.filter(x => x.id !== m.id);
-      normalize();
-      save(); renderAll();
-    }
+  main.append(confirmButton("Delete this strategy", () => {
+    data.maps = data.maps.filter(x => x.id !== m.id);
+    normalize();
+    save(); renderAll();
   }));
 }
 
@@ -724,17 +891,25 @@ document.getElementById("importFile").onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
+    let d;
     try {
-      const d = JSON.parse(reader.result);
+      d = JSON.parse(reader.result);
       if (!d || !Array.isArray(d.maps)) throw new Error("Bad format");
-      if (!confirm("This replaces everything currently in the site. Continue?")) return;
-      data = d;
-      normalize();
-      save(); renderAll();
     } catch (err) {
-      alert("Couldn't import that file.");
+      await openModal({ title: "Import failed", text: "Couldn't import that file.", cancel: false });
+      return;
     }
+    const yes = await openModal({
+      title: "Import strategies",
+      text: "This replaces everything currently in the site. Continue?",
+      ok: "Replace everything",
+      danger: true
+    });
+    if (!yes) return;
+    data = d;
+    normalize();
+    save(); renderAll();
   };
   reader.readAsText(file);
   e.target.value = "";
