@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Map image helper</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #121212; color: #e6e6e6; padding: 20px; }
+  button { background: #24242a; color: #e6e6e6; border: 1px solid #35353d; border-radius: 4px; padding: 8px 14px; cursor: pointer; margin-right: 8px; }
+  input[type="text"] { background: #24242a; color: #e6e6e6; border: 1px solid #35353d; border-radius: 4px; padding: 6px; width: 260px; }
+  .row { margin: 10px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  #msg { margin: 12px 0; white-space: pre-wrap; }
+  #out { width: 100%; background: #1b1b1f; color: #e6e6e6; border: 1px solid #35353d; }
+  #grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .card { width: 190px; padding: 8px; background: #1b1b1f; border: 1px solid #35353d; border-radius: 6px; font-size: 0.85em; }
+  .card img { display: block; width: 100%; height: 100px; object-fit: contain; background: #121212; margin-bottom: 6px; }
+  .name { font-weight: bold; margin-left: 4px; }
+  .status { color: #9a9aa5; word-break: break-all; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h2>Map top-view helper (TDX)</h2>
+
+  <div class="row">
+    <label>Picture file name must match:
+      <input type="text" id="pattern" value="top[ _-]?(view|down)">
+    </label>
+    <label><input type="checkbox" id="shrink" checked> Shrink pictures to 1000px wide</label>
+  </div>
+
+  <div class="row">
+    <button id="find">1. Find maps</button>
+    <button id="lines">2. Make games.js lines</button>
+  </div>
+
+  <div id="msg"></div>
+  <textarea id="out" rows="10"></textarea>
+  <div id="grid"></div>
+
+<script>
+const API = "https://tdx.fandom.com/api.php";
+const grid = document.getElementById("grid");
+const msg = document.getElementById("msg");
+const out = document.getElementById("out");
+const maps = [];
+
+async function api(params) {
+  const q = new URLSearchParams(Object.assign({ format: "json", origin: "*" }, params));
+  const r = await fetch(API + "?" + q);
+  return r.json();
+}
+
+async function categoryMembers(cat) {
+  const names = [];
+  let cont = null;
+  do {
+    const p = { action: "query", list: "categorymembers", cmtitle: cat, cmlimit: "500", cmtype: "page" };
+    if (cont) p.cmcontinue = cont;
+    const d = await api(p);
+    ((d.query && d.query.categorymembers) || []).forEach(x => names.push(x.title));
+    cont = d.continue ? d.continue.cmcontinue : null;
+  } while (cont);
+  return names;
+}
+
+// Every picture used on a map page, with its web address
+async function pagePictures(title) {
+  const all = [];
+  let extra = {};
+  do {
+    const d = await api(Object.assign({
+      action: "query", generator: "images", titles: title,
+      gimlimit: "max", prop: "imageinfo", iiprop: "url", redirects: "1"
+    }, extra));
+    const pages = d.query && d.query.pages ? Object.values(d.query.pages) : [];
+    pages.forEach(p => {
+      if (p.imageinfo && p.imageinfo[0]) all.push({ file: p.title, url: p.imageinfo[0].url });
+    });
+    extra = d.continue || null;
+  } while (extra);
+  return all;
+}
+
+function shrunk(url) {
+  if (document.getElementById("shrink").checked && url.includes("/revision/latest")) {
+    return url.replace("/revision/latest", "/revision/latest/scale-to-width-down/1000");
+  }
+  return url;
+}
+
+document.getElementById("find").onclick = async () => {
+  grid.innerHTML = "";
+  maps.length = 0;
+  out.value = "";
+
+  let re;
+  try {
+    re = new RegExp(document.getElementById("pattern").value, "i");
+  } catch (e) {
+    msg.textContent = "That match pattern isn't valid. Try: top";
+    return;
+  }
+
+  msg.textContent = "Getting the map list from the wiki...";
+  let titles;
+  try {
+    titles = await categoryMembers("Category:Maps");
+  } catch (e) {
+    msg.textContent = "Couldn't reach the wiki: " + e;
+    return;
+  }
+  titles.sort((a, b) => a.localeCompare(b));
+  msg.textContent = "Found " + titles.length + " map pages. Looking for top views... (about a minute)";
+
+  for (const title of titles) {
+    const name = title.replace(/ \(Map\)$/, "");
+
+    const card = document.createElement("div");
+    card.className = "card";
+    const head = document.createElement("label");
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = true;
+    const nameEl = document.createElement("span");
+    nameEl.className = "name";
+    nameEl.textContent = name;
+    head.append(check, nameEl);
+    const status = document.createElement("div");
+    status.className = "status";
+    status.textContent = "looking...";
+    card.append(head, status);
+    grid.append(card);
+
+    const entry = { name, url: null, check };
+    maps.push(entry);
+
+    try {
+      const pics = await pagePictures(title);
+      const hit = pics.find(p => re.test(p.file));
+      if (!hit) {
+        status.textContent = "no top view found (" + pics.length + " pictures on page)";
+      } else {
+        entry.url = hit.url;
+        status.textContent = hit.file.replace(/^File:/, "");
+        const img = document.createElement("img");
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => { status.textContent += "  (preview failed)"; };
+        img.src = shrunk(hit.url);
+        card.prepend(img);
+      }
+    } catch (e) {
+      status.textContent = "lookup failed";
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  const found = maps.filter(m => m.url).length;
+  msg.textContent = "Done. Top views found for " + found + " of " + maps.length + " maps.\n" +
+    "Untick any maps you don't want (removed maps, for example), then click 2. Make games.js lines.";
+};
+
+document.getElementById("lines").onclick = () => {
+  if (!maps.length) {
+    msg.textContent = "Click 1. Find maps first.";
+    return;
+  }
+  out.value = maps.filter(m => m.check.checked).map(m => {
+    let line = '      { name: "' + m.name.replace(/"/g, '\\"') + '"';
+    if (m.url) line += ', img: "' + shrunk(m.url) + '"';
+    return line + " },";
+  }).join("\n");
+  out.select();
+  document.execCommand("copy");
+  msg.textContent = "Copied! Paste it into the maps list in games.js (see the steps).";
+};
+</script>
+</body>
+</html>

@@ -63,6 +63,11 @@ const GAMES = {
       { name: "Shield Tower", img: "https://static.wikia.nocookie.net/tdx/images/a/a4/ShieldTower0.png/revision/latest?cb=20251015170356" },
       { name: "Stinger", img: "https://static.wikia.nocookie.net/tdx/images/f/fb/Stinger0.png/revision/latest?cb=20260322221729" },
       { name: "Troll Tower", img: "https://static.wikia.nocookie.net/tdx/images/b/b6/TrollTower0.png/revision/latest?cb=20250402010056" },
+    ],
+    maps: [
+      // { name: "Map Name" },                              // picture is looked up in images/tdx/maps/map-name.png
+      // { name: "Map Name", img: "https://..." },          // or give a web link
+      { name: "Example Map" }
     ]
   },
   custom: {

@@ -1,5 +1,15 @@
 const SPECIAL_SLOTS = ["DPS", "Bait", "Empty"]; // extra choices in the loadout
 
+const SUB_ROLES = [
+  ["", "Sub-role: none"],
+  ["optional", "Optional"],
+  ["change", "Can change to..."],
+  ["bait", "Bait"]
+];
+
+// Remembered between redraws so your brush settings don't reset
+let paintTool = { t: "brush", c: "#ff4d4d", s: 14 };
+
 const KEY = "td-strategy-v1";
 let data = load();
 normalize();
@@ -28,6 +38,7 @@ function el(tag, props = {}, ...kids) {
 }
 
 /* ---------- Game / tower helpers ---------- */
+// Note: data.maps holds your STRATEGIES (the name is kept so saved data still works)
 function gameOf(m) {
   return GAMES[m.game] || { towers: [] };
 }
@@ -66,6 +77,8 @@ function normalize() {
   const knownActions = ACTIONS.map(a => a.id);
   data.maps.forEach(m => {
     if (!m.game) m.game = ids[0];
+    if (!Array.isArray(m.paint)) m.paint = [];
+    if (m.map === undefined) m.map = "";
     ensureLoadout(m);
     m.steps.forEach(s => {
       // old free-text actions become "Other" with the text kept
@@ -127,9 +140,12 @@ function renderSidebar() {
 }
 
 document.getElementById("addMap").onclick = () => {
-  const name = prompt("Map name?");
+  const name = prompt("Strategy name?");
   if (!name) return;
-  const m = { id: uid(), name, game: data.game, notes: "", steps: [], loadout: [] };
+  const m = {
+    id: uid(), name, game: data.game, map: "",
+    notes: "", steps: [], loadout: [], paint: []
+  };
   ensureLoadout(m);
   data.maps.push(m);
   data.current = m.id;
@@ -219,7 +235,7 @@ function loadoutGroups(towers) {
   ];
 }
 
-// Actions: DPS and loadout towers first, then every other tower (no Bait / Empty)
+// Actions: DPS, loadout towers and swap towers first, then every other tower
 function actionGroups(m, towers) {
   const inLoad = [];
   m.loadout.forEach(sl => {
@@ -237,6 +253,7 @@ function actionGroups(m, towers) {
     { title: "All towers", items: rest }
   ];
 }
+
 /* ---------- Action fields ---------- */
 function choiceSelect(s, key, options) {
   const select = el("select", {
@@ -314,6 +331,198 @@ function actionSelect(s) {
   return select;
 }
 
+/* ---------- Map picture + painting ---------- */
+function renderBoard(m) {
+  const wrap = el("div", { className: "mapbox" });
+  const maps = gameOf(m).maps || [];
+
+  // Map picker
+  const picker = el("select", {
+    onchange: e => { m.map = e.target.value; save(); renderMain(); }
+  },
+    el("option", { value: "", textContent: "— choose map —" }),
+    ...maps.map(mp => el("option", { value: mp.name, textContent: mp.name }))
+  );
+  picker.value = m.map || "";
+  wrap.append(el("div", { className: "maprow" },
+    el("span", { textContent: "Map:" }), picker
+  ));
+  if (!maps.length) {
+    wrap.append(el("p", {
+      className: "hint",
+      textContent: "No maps added for this game yet (add them in games.js). You can still paint on the blank board."
+    }));
+  }
+
+  // Toolbar
+  const bar = el("div", { className: "paintbar" });
+  const toolBtns = [["brush", "Brush"], ["lasso", "Lasso"], ["erase", "Eraser"]].map(([t, label]) => {
+    const b = el("button", {
+      textContent: label,
+      className: paintTool.t === t ? "active" : "",
+      onclick: () => {
+        paintTool.t = t;
+        toolBtns.forEach(x => x.classList.toggle("active", x === b));
+      }
+    });
+    return b;
+  });
+  bar.append(...toolBtns);
+  bar.append(
+    el("input", {
+      type: "color", value: paintTool.c, title: "Color",
+      oninput: e => { paintTool.c = e.target.value; }
+    }),
+    el("span", { textContent: "Size" }),
+    el("input", {
+      type: "range", min: 4, max: 60, value: paintTool.s,
+      oninput: e => { paintTool.s = Number(e.target.value); }
+    }),
+    el("button", {
+      textContent: "Undo",
+      onclick: () => { m.paint.pop(); save(); redraw(); }
+    }),
+    el("button", {
+      textContent: "Clear",
+      onclick: () => {
+        if (!m.paint.length || !confirm("Clear all painting on this strategy?")) return;
+        m.paint = [];
+        save(); redraw();
+      }
+    })
+  );
+  wrap.append(bar);
+
+  // Board = picture + transparent canvas on top
+  const board = el("div", { className: "board" });
+  const canvas = el("canvas", { className: "paint" });
+  const mp = maps.find(x => x.name === m.map);
+
+  if (mp) {
+    const tries = ["images/" + m.game + "/maps/" + slug(mp.name) + ".png"];
+    if (mp.img) tries.push(mp.img);
+    let n = 0;
+    const img = el("img", { className: "board-img", alt: mp.name, draggable: false });
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => {
+      n++;
+      if (n < tries.length) {
+        img.src = tries[n];
+      } else {
+        img.remove();
+        board.classList.add("blank");
+      }
+    };
+    img.src = tries[0];
+    board.append(img);
+  } else {
+    board.classList.add("blank");
+  }
+  board.append(canvas);
+  wrap.append(board);
+
+  // ----- drawing -----
+  function drawStroke(ctx, st, preview) {
+    const w = canvas.width, h = canvas.height;
+    const scale = w / 1000;
+    const pts = st.p.map(([x, y]) => [x * w, y * h]);
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (st.t === "lasso") {
+      if (pts.length >= 2) {
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.strokeStyle = st.c;
+        ctx.lineWidth = 2 * scale;
+        if (preview) {
+          ctx.setLineDash([6 * scale, 4 * scale]);
+          ctx.stroke();
+        } else {
+          ctx.closePath();
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = st.c;
+          ctx.fill();
+          ctx.globalAlpha = 0.9;
+          ctx.stroke();
+        }
+      }
+    } else {
+      ctx.globalCompositeOperation = st.t === "erase" ? "destination-out" : "source-over";
+      ctx.globalAlpha = st.t === "erase" ? 1 : 0.6;
+      ctx.strokeStyle = st.c;
+      ctx.fillStyle = st.c;
+      ctx.lineWidth = st.s * scale;
+      ctx.beginPath();
+      if (pts.length === 1) {
+        ctx.arc(pts[0][0], pts[0][1], (st.s * scale) / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function redraw(live) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    m.paint.forEach(st => drawStroke(ctx, st, false));
+    if (live) drawStroke(ctx, live, true);
+  }
+
+  function resize() {
+    const r = board.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(r.width * dpr));
+    canvas.height = Math.max(1, Math.round(r.height * dpr));
+    redraw();
+  }
+  new ResizeObserver(resize).observe(board);
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    return [
+      +((e.clientX - r.left) / r.width).toFixed(4),
+      +((e.clientY - r.top) / r.height).toFixed(4)
+    ];
+  }
+
+  let live = null;
+
+  canvas.onpointerdown = e => {
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    live = { t: paintTool.t, c: paintTool.c, s: paintTool.s, p: [pos(e)] };
+    redraw(live);
+  };
+
+  canvas.onpointermove = e => {
+    if (!live) return;
+    const p = pos(e);
+    const last = live.p[live.p.length - 1];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 0.002) return;
+    live.p.push(p);
+    redraw(live);
+  };
+
+  function finish() {
+    if (!live) return;
+    const st = live;
+    live = null;
+    if (st.t === "lasso" && st.p.length < 3) { redraw(); return; }
+    m.paint.push(st);
+    save();
+    redraw();
+  }
+  canvas.onpointerup = finish;
+  canvas.onpointercancel = finish;
+
+  return wrap;
+}
+
 /* ---------- Loadout ---------- */
 // Fallback when a tower has no image yet
 function badge(m, name) {
@@ -340,13 +549,6 @@ function specialBadge(name) {
     textContent: name.toUpperCase()
   });
 }
-
-const SUB_ROLES = [
-  ["", "Sub-role: none"],
-  ["optional", "Optional"],
-  ["change", "Can change to..."],
-  ["bait", "Bait"]
-];
 
 function renderLoadout(m, towers) {
   const box = el("div", { className: "loadout" });
@@ -421,19 +623,21 @@ function renderMain() {
   main.innerHTML = "";
   const m = currentMap();
   if (!m) {
-    main.append(el("p", { textContent: "Add or select a map to start." }));
+    main.append(el("p", { textContent: "Add or select a strategy to start." }));
     return;
   }
 
   const towers = gameOf(m).towers || [];
 
   main.append(el("input", {
-    id: "mapName", value: m.name,
+    id: "mapName", value: m.name, placeholder: "Strategy name",
     oninput: e => { m.name = e.target.value; save(); renderSidebar(); }
   }));
 
+  main.append(renderBoard(m));
+
   main.append(el("textarea", {
-    id: "mapNotes", value: m.notes, placeholder: "General strategy notes for this map...",
+    id: "mapNotes", value: m.notes, placeholder: "Notes for this strategy...",
     oninput: e => { m.notes = e.target.value; save(); }
   }));
 
@@ -489,9 +693,9 @@ function renderMain() {
   }));
 
   main.append(el("button", {
-    textContent: "Delete this map",
+    textContent: "Delete this strategy",
     onclick: () => {
-      if (!confirm("Delete this map?")) return;
+      if (!confirm("Delete this strategy?")) return;
       data.maps = data.maps.filter(x => x.id !== m.id);
       normalize();
       save(); renderAll();
