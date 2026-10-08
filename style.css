@@ -490,3 +490,26 @@ button.primary:hover {
   width: 100%;
   margin-top: 8px;
 }
+
+.byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.byline input.author {
+  width: 240px;
+}
+
+.credit {
+  color: var(--muted);
+  font-size: 0.85em;
+  margin-bottom: 10px;
+}
+
+#credit {
+  margin-top: 18px;
+  font-size: 0.8em;
+  color: var(--muted);
+}

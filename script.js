@@ -10,6 +10,13 @@ const SUB_ROLES = [
 // Colors offered after the ones drawn on the map
 const PALETTE = ["#ff4d4d", "#ffa94d", "#ffe14d", "#5ee26b", "#4dd2ff", "#4d7bff", "#b84dff", "#ff4da6", "#ffffff"];
 
+
+const CREDIT = "TDesign by FiveDextor"; // always shown, please keep
+
+function creditText(m) {
+  return (m && m.author ? "Strategy by " + m.author + " · " : "") + CREDIT;
+}
+
 // Remembered between redraws so your brush settings don't reset
 let paintTool = { t: "brush", c: "#ff4d4d", s: 14 };
 
@@ -241,7 +248,7 @@ document.getElementById("addMap").onclick = async () => {
   });
   if (!name) return;
   const m = {
-    id: uid(), name, game: data.game, map: "",
+    id: uid(), name, game: data.game, map: "", author: data.lastAuthor || "",
     notes: "", steps: [], loadout: [], paint: []
   };
   ensureLoadout(m);
@@ -799,6 +806,21 @@ function renderMain() {
     oninput: e => { m.name = e.target.value; save(); renderSidebar(); }
   }));
 
+  const creditLine = el("div", { className: "credit", textContent: creditText(m) });
+  main.append(el("div", { className: "byline" },
+    el("span", { textContent: "Author:" }),
+    el("input", {
+      className: "author", value: m.author || "", placeholder: "Your name",
+      oninput: e => {
+        m.author = e.target.value;
+        data.lastAuthor = e.target.value;
+        creditLine.textContent = creditText(m);
+        save();
+      }
+    })
+  ));
+  main.append(creditLine);
+
   main.append(renderBoard(m));
 
   main.append(el("textarea", {
@@ -879,7 +901,7 @@ function moveStep(m, i, dir) {
 
 /* ---------- Export / Import ---------- */
 document.getElementById("exportBtn").onclick = () => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(Object.assign({}, data, { credit: CREDIT }), null, 2)], { type: "application/json" });
   const a = el("a", { href: URL.createObjectURL(blob), download: "td-strategies.json" });
   a.click();
   URL.revokeObjectURL(a.href);
