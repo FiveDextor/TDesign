@@ -292,3 +292,7 @@ select option {
   font-size: 1.2em;
   letter-spacing: 1px;
 }
+
+.slot select {
+  width: 100%;
+}

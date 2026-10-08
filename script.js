@@ -223,7 +223,9 @@ function loadoutGroups(towers) {
 function actionGroups(m, towers) {
   const inLoad = [];
   m.loadout.forEach(sl => {
-    if (sl.tower && !isSpecial(sl.tower) && !inLoad.includes(sl.tower)) inLoad.push(sl.tower);
+    [sl.tower, sl.sub === "change" ? sl.swap : ""].forEach(n => {
+      if (n && !isSpecial(n) && !inLoad.includes(n)) inLoad.push(n);
+    });
   });
   const top = [{ value: "DPS", label: "DPS" }]
     .concat(inLoad.map(n => ({ value: n, label: n })));
@@ -235,7 +237,6 @@ function actionGroups(m, towers) {
     { title: "All towers", items: rest }
   ];
 }
-
 /* ---------- Action fields ---------- */
 function choiceSelect(s, key, options) {
   const select = el("select", {
@@ -340,6 +341,13 @@ function specialBadge(name) {
   });
 }
 
+const SUB_ROLES = [
+  ["", "Sub-role: none"],
+  ["optional", "Optional"],
+  ["change", "Can change to..."],
+  ["bait", "Bait"]
+];
+
 function renderLoadout(m, towers) {
   const box = el("div", { className: "loadout" });
   box.append(el("h3", { textContent: "Loadout" }));
@@ -351,7 +359,7 @@ function renderLoadout(m, towers) {
     const card = el("div", { className: "slot" });
 
     const imgBox = el("div", { className: "slot-img" });
-        if (slot.tower) {
+    if (slot.tower) {
       if (isSpecial(slot.tower)) {
         imgBox.append(specialBadge(slot.tower));
       } else {
@@ -375,10 +383,31 @@ function renderLoadout(m, towers) {
       }
     }
 
+    // Sub-role dropdown
+    const subSelect = el("select", {
+      onchange: e => { slot.sub = e.target.value; save(); renderMain(); }
+    }, ...SUB_ROLES.map(([value, label]) => el("option", { value, textContent: label })));
+    subSelect.value = slot.sub || "";
+
     card.append(
       imgBox,
-      towerPicker(slot, loadoutGroups(towers), () => renderMain())
+      towerPicker(slot, loadoutGroups(towers), () => renderMain()),
+      subSelect
     );
+
+    // "Can change to..." shows a second tower search
+    if (slot.sub === "change") {
+      const swap = {
+        get tower() { return slot.swap || ""; },
+        set tower(v) { slot.swap = v; }
+      };
+      card.append(towerPicker(
+        swap,
+        [{ title: null, items: towers.map(t => ({ value: t.name, label: t.name })) }],
+        () => renderMain()
+      ));
+    }
+
     grid.append(card);
   });
 
