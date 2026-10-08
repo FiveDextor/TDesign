@@ -1,6 +1,4 @@
-==================================================
-TDesign
-=======
+## TDesign
 
 A personal web design and UI project created by FiveDextor.
 
