@@ -520,3 +520,120 @@ button.primary:hover {
   gap: 8px;
   margin-bottom: 12px;
 }
+
+/* folders in the sidebar */
+#where {
+  color: var(--muted);
+  font-size: 0.8em;
+  margin: 6px 0;
+}
+
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+#sidebar .frow button {
+  width: auto;
+  display: inline-block;
+  margin: 0;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+#sidebar .frow .fname {
+  flex: 1;
+  text-align: left;
+  font-weight: bold;
+}
+
+#sidebar .frow .ftoggle {
+  width: 26px;
+}
+
+.frow.active .fname {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+/* strategy header */
+.byline select {
+  width: auto;
+  min-width: 160px;
+}
+
+.creditbox {
+  width: 100%;
+  max-width: 640px;
+  height: 50px;
+  margin-bottom: 6px;
+}
+
+.buildhead {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.wavetoggle {
+  color: var(--muted);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.maprow .combo {
+  width: 280px;
+}
+
+.maprow .combo input {
+  width: 100%;
+}
+
+/* contributors */
+.contribs {
+  margin-bottom: 8px;
+}
+
+.contrib {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.contrib input {
+  width: 200px;
+}
+
+/* build order branches */
+.wave {
+  width: 90px;
+}
+
+.branchrow td {
+  background: var(--panel);
+}
+
+.branchhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.branchhead .btitle {
+  flex: 1;
+  width: auto;
+  font-weight: bold;
+}
+
+.branchhead .btoggle {
+  width: 26px;
+}
+
+.ctrls {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}

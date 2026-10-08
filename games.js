@@ -4,6 +4,7 @@ const GAMES = {
     name: "Tower Defense X",
     maxLevel: 5,
     loadoutSize: 6,
+    credits: ["Tower and map pictures: Tower Defense X Wiki (fan-made, not affiliated)"],
     towers: [      { name: "AA Turret", img: "https://static.wikia.nocookie.net/tdx/images/d/dc/AATurret0.png/revision/latest?cb=20250328012925" },
       { name: "Armored Factory", img: "https://static.wikia.nocookie.net/tdx/images/a/a5/Armored_Factory_0.png/revision/latest?cb=20240309034504" },
       { name: "Artillery", img: "https://static.wikia.nocookie.net/tdx/images/3/36/Artillery_0.png/revision/latest?cb=20240124231017" },

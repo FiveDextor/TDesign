@@ -17,6 +17,17 @@ function creditText(m) {
   return (m && m.author ? "Strategy by " + m.author + " · " : "") + CREDIT;
 }
 
+// Contributors line plus the game's credits, one string each
+function extraCredits(m) {
+  const list = [];
+  const people = (m.contributors || [])
+    .filter(c => (c.name || "").trim())
+    .map(c => c.name.trim() + ((c.role || "").trim() ? " (" + c.role.trim() + ")" : ""));
+  if (people.length) list.push("Contributors: " + people.join(", "));
+  (gameOf(m).credits || []).forEach(c => list.push(c));
+  return list;
+}
+
 // Remembered between redraws so your brush settings don't reset
 let paintTool = { t: "brush", c: "#ff4d4d", s: 14 };
 
@@ -49,7 +60,7 @@ function el(tag, props = {}, ...kids) {
 
 /* ---------- Pop-ups and confirm buttons ---------- */
 // Returns a Promise: the typed text (if input), true (OK), or null (cancelled)
-function openModal({ title, text, input, ok = "OK", cancel = true, danger = false }) {
+function openModal({ title, text, input, value = "", ok = "OK", cancel = true, danger = false }) {
   return new Promise(resolve => {
     const overlay = el("div", { className: "modal-overlay" });
     const box = el("div", { className: "modal" });
@@ -58,7 +69,7 @@ function openModal({ title, text, input, ok = "OK", cancel = true, danger = fals
 
     let field = null;
     if (input) {
-      field = el("input", { type: "text", placeholder: input, className: "modal-input" });
+      field = el("input", { type: "text", placeholder: input, value: value, className: "modal-input" });
       box.append(field);
     }
 
@@ -174,13 +185,25 @@ function normalize() {
   const ids = Object.keys(GAMES);
   if (!GAMES[data.game]) data.game = ids[0];
 
+  if (!Array.isArray(data.folders)) data.folders = [];
+  {
+    const af = folderById(data.activeFolder);
+    if (!af || af.game !== data.game) data.activeFolder = "";
+  }
+
   const knownActions = ACTIONS.map(a => a.id);
   data.maps.forEach(m => {
     if (!m.game) m.game = ids[0];
+    if (!m.folder || !folderById(m.folder)) m.folder = "";
+    if (!Array.isArray(m.contributors)) {
+      m.contributors = String(m.credits || "").split("\n")
+        .map(x => x.trim()).filter(Boolean)
+        .map(x => ({ name: x, role: "" }));
+    }
     if (!Array.isArray(m.paint)) m.paint = [];
     if (m.map === undefined) m.map = "";
     ensureLoadout(m);
-    m.steps.forEach(s => {
+      eachStep(m.steps, s => {
       // old free-text actions become "Other" with the text kept
       if (s.action && !knownActions.includes(s.action)) {
         s.text = s.text || s.action;
@@ -226,18 +249,124 @@ function renderGames() {
   };
 }
 
-/* ---------- Sidebar ---------- */
-function renderSidebar() {
-  const list = document.getElementById("mapList");
-  list.innerHTML = "";
-  mapsForGame().forEach(m => {
-    list.append(el("button", {
+/* ---------- Sidebar (folders and strategies) ---------- */
+function foldersForGame() {
+  return (data.folders || []).filter(f => f.game === data.game);
+}
+
+function folderById(id) {
+  return (data.folders || []).find(f => f.id === id) || null;
+}
+
+function strategiesIn(parent) {
+  return mapsForGame().filter(m => (m.folder || "") === parent);
+}
+
+// [ [id, "A / B"], ... ] in tree order, for the Folder dropdown
+function folderOptions() {
+  const out = [];
+  function walk(parent, prefix) {
+    foldersForGame().filter(f => (f.parent || "") === parent).forEach(f => {
+      const label = prefix ? prefix + " / " + f.name : f.name;
+      out.push([f.id, label]);
+      walk(f.id, label);
+    });
+  }
+  walk("", "");
+  return out;
+}
+
+function renderTree(container, parent, depth) {
+  foldersForGame().filter(f => (f.parent || "") === parent).forEach(f => {
+    const row = el("div", {
+      className: "frow" + (data.activeFolder === f.id ? " active" : ""),
+      style: "padding-left:" + depth * 14 + "px"
+    });
+    row.append(
+      el("button", {
+        className: "ftoggle", title: "Open or close",
+        textContent: f.open === false ? "▸" : "▾",
+        onclick: () => { f.open = (f.open === false); save(); renderSidebar(); }
+      }),
+      el("button", {
+        className: "fname", textContent: f.name,
+        onclick: () => { data.activeFolder = f.id; f.open = true; save(); renderSidebar(); }
+      }),
+      el("button", { textContent: "✎", title: "Rename folder", onclick: () => renameFolder(f) }),
+      el("button", { textContent: "✕", title: "Delete folder", onclick: () => deleteFolder(f) })
+    );
+    container.append(row);
+    if (f.open !== false) renderTree(container, f.id, depth + 1);
+  });
+
+  strategiesIn(parent).forEach(m => {
+    container.append(el("button", {
       textContent: m.name || "(unnamed)",
       className: m.id === data.current ? "active" : "",
+      style: "padding-left:" + (8 + depth * 14) + "px",
       onclick: () => { data.current = m.id; save(); renderSidebar(); renderMain(); }
     }));
   });
 }
+
+function renderSidebar() {
+  const list = document.getElementById("mapList");
+  list.innerHTML = "";
+
+  const af = folderById(data.activeFolder);
+  document.getElementById("where").textContent =
+    "New items go in: " + (af ? af.name : "top level");
+
+  list.append(el("button", {
+    className: "treeroot" + (!af ? " active" : ""),
+    textContent: "Top level",
+    onclick: () => { data.activeFolder = ""; save(); renderSidebar(); }
+  }));
+
+  renderTree(list, "", 0);
+}
+
+async function renameFolder(f) {
+  const name = await openModal({
+    title: "Rename folder", input: "Folder name", value: f.name, ok: "Rename"
+  });
+  if (!name) return;
+  f.name = name;
+  save(); renderSidebar(); renderMain();
+}
+
+async function deleteFolder(f) {
+  const yes = await openModal({
+    title: "Delete folder",
+    text: "Delete \"" + f.name + "\"? Everything inside it moves up one level. Nothing else is deleted.",
+    ok: "Delete folder",
+    danger: true
+  });
+  if (!yes) return;
+  const up = f.parent || "";
+  data.folders.forEach(x => { if (x.parent === f.id) x.parent = up; });
+  data.maps.forEach(m => { if (m.folder === f.id) m.folder = up; });
+  data.folders = data.folders.filter(x => x.id !== f.id);
+  if (data.activeFolder === f.id) data.activeFolder = up;
+  save(); renderSidebar(); renderMain();
+}
+
+document.getElementById("addFolder").onclick = async () => {
+  const name = await openModal({
+    title: "New folder",
+    text: "Folders can hold strategies and other folders.",
+    input: "Folder name",
+    ok: "Create"
+  });
+  if (!name) return;
+  const f = {
+    id: uid(), name, game: data.game, parent: data.activeFolder || "", open: true
+  };
+  data.folders.push(f);
+  const p = folderById(f.parent);
+  if (p) p.open = true;
+  save(); renderSidebar(); renderMain();
+};
 
 document.getElementById("addMap").onclick = async () => {
   const name = await openModal({
@@ -247,8 +376,10 @@ document.getElementById("addMap").onclick = async () => {
     ok: "Create"
   });
   if (!name) return;
+  const af = folderById(data.activeFolder);
   const m = {
     id: uid(), name, game: data.game, map: "", author: data.lastAuthor || "",
+    folder: af && af.game === data.game ? af.id : "",
     notes: "", steps: [], loadout: [], paint: []
   };
   ensureLoadout(m);
@@ -259,9 +390,9 @@ document.getElementById("addMap").onclick = async () => {
 
 /* ---------- Searchable tower dropdown (supports groups) ---------- */
 // groups: [ { title: "Loadout" or null, items: [ { value, label } ] } ]
-function towerPicker(s, groups, onChange) {
+function towerPicker(s, groups, onChange, placeholder) {
   const wrap = el("div", { className: "combo" });
-  const input = el("input", { value: s.tower || "", placeholder: "Search tower..." });
+  const input = el("input", { value: s.tower || "", placeholder: placeholder || "Search tower..." });
   const list = el("div", { className: "combo-list" });
   list.hidden = true;
 
@@ -503,22 +634,19 @@ function renderBoard(m) {
   const maps = gameOf(m).maps || [];
 
   // Map picker
-  const picker = el("select", {
-    onchange: e => { m.map = e.target.value; save(); renderMain(); }
-  },
-    el("option", { value: "", textContent: "— choose map —" }),
-    ...maps.map(mp => el("option", { value: mp.name, textContent: mp.name }))
+  const mapProxy = {
+    get tower() { return m.map || ""; },
+    set tower(v) { m.map = v; }
+  };
+  const picker = towerPicker(
+    mapProxy,
+    [{ title: null, items: maps.map(mp => ({ value: mp.name, label: mp.name })) }],
+    () => renderMain(),
+    "Search map..."
   );
-  picker.value = m.map || "";
   wrap.append(el("div", { className: "maprow" },
     el("span", { textContent: "Map:" }), picker
   ));
-  if (!maps.length) {
-    wrap.append(el("p", {
-      className: "hint",
-      textContent: "No maps added for this game yet (add them in games.js). You can still paint on the blank board."
-    }));
-  }
 
   // Toolbar
   const bar = el("div", { className: "paintbar" });
@@ -789,7 +917,6 @@ function renderLoadout(m, towers) {
   return box;
 }
 
-/* ---------- Main panel ---------- */
 function renderMain() {
   const main = document.getElementById("main");
   main.innerHTML = "";
@@ -800,27 +927,80 @@ function renderMain() {
   }
 
   const towers = gameOf(m).towers || [];
+  const useWave = m.useWave !== false;
 
   main.append(el("input", {
     id: "mapName", value: m.name, placeholder: "Strategy name",
     oninput: e => { m.name = e.target.value; save(); renderSidebar(); }
   }));
 
+  // credit lines (update live as you type)
   const creditLine = el("div", { className: "credit", textContent: creditText(m) });
+  const extraBox = el("div", {});
+  function refreshCredits() {
+    creditLine.textContent = creditText(m);
+    extraBox.innerHTML = "";
+    extraCredits(m).forEach(line => {
+      extraBox.append(el("div", { className: "credit", textContent: line }));
+    });
+  }
+  refreshCredits();
+
+  // author + folder
+  const folderSelect = el("select", {
+    onchange: e => { m.folder = e.target.value; save(); renderSidebar(); }
+  },
+    el("option", { value: "", textContent: "Top level" }),
+    ...folderOptions().map(([id, label]) => el("option", { value: id, textContent: label }))
+  );
+  folderSelect.value = m.folder || "";
+
   main.append(el("div", { className: "byline" },
     el("span", { textContent: "Author:" }),
     el("input", {
-      className: "author", value: m.author || "", placeholder: "Your name",
+      className: "author", value: m.author || "", placeholder: "Main author",
       oninput: e => {
         m.author = e.target.value;
         data.lastAuthor = e.target.value;
-        creditLine.textContent = creditText(m);
+        refreshCredits();
         save();
       }
-    })
+    }),
+    el("span", { textContent: "Folder:" }),
+    folderSelect
   ));
-  main.append(creditLine);
 
+  // contributor slots
+  const contribBox = el("div", { className: "contribs" });
+  function renderContribs() {
+    contribBox.innerHTML = "";
+    contribBox.append(el("div", { className: "hint", textContent: "Contributors (optional)" }));
+    m.contributors.forEach((c, i) => {
+      contribBox.append(el("div", { className: "contrib" },
+        el("input", {
+          value: c.name || "", placeholder: "Name",
+          oninput: e => { c.name = e.target.value; save(); refreshCredits(); }
+        }),
+        el("input", {
+          value: c.role || "", placeholder: "What they did (optional)",
+          oninput: e => { c.role = e.target.value; save(); refreshCredits(); }
+        }),
+        el("button", {
+          textContent: "✕", title: "Remove",
+          onclick: () => { m.contributors.splice(i, 1); save(); renderContribs(); refreshCredits(); }
+        })
+      ));
+    });
+    contribBox.append(el("button", {
+      textContent: "+ Add contributor",
+      onclick: () => { m.contributors.push({ name: "", role: "" }); save(); renderContribs(); }
+    }));
+  }
+  renderContribs();
+  main.append(contribBox);
+
+  main.append(creditLine);
+  main.append(extraBox);
   main.append(exportBar(m));
 
   main.append(renderBoard(m));
@@ -832,59 +1012,31 @@ function renderMain() {
 
   main.append(renderLoadout(m, towers));
 
-  main.append(el("h3", { textContent: "Build order" }));
-
-  const table = el("table");
-  table.append(el("tr", {},
-    el("th", { textContent: "Wave" }),
-    el("th", { textContent: "Action" }),
-    el("th", { textContent: "Details" }),
-    el("th", { textContent: "Notes" }),
-    el("th", { textContent: "" })
+  main.append(el("div", { className: "buildhead" },
+    el("h3", { textContent: "Build order" }),
+    el("label", { className: "wavetoggle" },
+      el("input", {
+        type: "checkbox", checked: useWave,
+        onchange: e => { m.useWave = e.target.checked; save(); renderMain(); }
+      }),
+      " Use wave numbers (optional)"
+    )
   ));
 
-  m.steps.forEach((s, i) => {
-    const row = el("tr");
-
-    const waveTd = el("td", {}, el("input", {
-      className: "wave", value: s.wave,
-      oninput: e => { s.wave = e.target.value; save(); }
-    }));
-    row.append(waveTd);
-
-    row.append(el("td", {}, actionSelect(s)));
-
-    const def = ACTIONS.find(a => a.id === s.action);
-    const details = el("div", { className: "details" });
-    if (def) def.fields.forEach(f => details.append(fieldFor(f, s, m, towers)));
-    row.append(el("td", {}, details));
-
-    // colored bar on the left edge of rows that have a color
-    if (def && def.fields.includes("color") && s.color) {
-      waveTd.style.boxShadow = "inset 5px 0 0 " + s.color;
-    }
-
-    row.append(el("td", {}, el("input", {
-      value: s.notes,
-      oninput: e => { s.notes = e.target.value; save(); }
-    })));
-
-    row.append(el("td", {},
-      el("button", { textContent: "↑", onclick: () => moveStep(m, i, -1) }),
-      el("button", { textContent: "↓", onclick: () => moveStep(m, i, 1) }),
-      el("button", { textContent: "✕", onclick: () => { m.steps.splice(i, 1); save(); renderMain(); } })
-    ));
-
-    table.append(row);
-  });
+  const table = el("table");
+  const headers = useWave ? ["Wave"] : [];
+  headers.push("Action", "Details", "Notes", "");
+  table.append(el("tr", {}, ...headers.map(h => el("th", { textContent: h }))));
+  renderSteps(table, m.steps, 0, null, m, towers, useWave);
   main.append(table);
 
   main.append(el("button", {
     textContent: "+ Add step",
-    onclick: () => {
-      m.steps.push({ wave: "", action: "", tower: "", time: "", text: "", color: "", notes: "" });
-      save(); renderMain();
-    }
+    onclick: () => { m.steps.push(newStep()); save(); renderMain(); }
+  }));
+  main.append(el("button", {
+    textContent: "+ Add branch",
+    onclick: () => { m.steps.push(newBranch()); save(); renderMain(); }
   }));
 
   main.append(confirmButton("Delete this strategy", () => {
@@ -894,11 +1046,171 @@ function renderMain() {
   }));
 }
 
-function moveStep(m, i, dir) {
+/* ---------- Build order tree (steps and branches) ---------- */
+function isBranch(n) {
+  return n && n.type === "branch";
+}
+
+// Calls fn(step) for every step, including steps inside branches
+function eachStep(list, fn) {
+  list.forEach(n => {
+    if (isBranch(n)) eachStep(n.children || [], fn);
+    else fn(n);
+  });
+}
+
+// Flat list [{ node, depth }] in order, used by the image and Google Docs copy
+function flattenSteps(list, depth = 0, out = []) {
+  list.forEach(n => {
+    out.push({ node: n, depth });
+    if (isBranch(n)) flattenSteps(n.children || [], depth + 1, out);
+  });
+  return out;
+}
+
+function newStep() {
+  return { wave: "", action: "", tower: "", time: "", text: "", color: "", notes: "" };
+}
+
+function newBranch() {
+  return { type: "branch", id: uid(), title: "", wave: "", open: true, children: [] };
+}
+
+function cleanWave(v) {
+  return String(v || "")
+    .replace(/[–—]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function waveInput(n) {
+  return el("input", {
+    className: "wave", value: n.wave || "", placeholder: "1 or 1-15",
+    title: "One wave (7) or a range (1-15)",
+    oninput: e => { n.wave = e.target.value; save(); },
+    onchange: e => {
+      const v = cleanWave(e.target.value);
+      e.target.value = v;
+      n.wave = v;
+      save();
+    }
+  });
+}
+
+function moveNode(list, i, dir) {
   const j = i + dir;
-  if (j < 0 || j >= m.steps.length) return;
-  [m.steps[i], m.steps[j]] = [m.steps[j], m.steps[i]];
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
   save(); renderMain();
+}
+
+// Move out of the branch it's in, to just after that branch
+function outdentNode(list, i, parent) {
+  if (!parent) return;
+  const [n] = list.splice(i, 1);
+  parent.list.splice(parent.index + 1, 0, n);
+  save(); renderMain();
+}
+
+// Move into the branch just above it
+function indentNode(list, i) {
+  const prev = list[i - 1];
+  if (!prev || !isBranch(prev)) return;
+  const [n] = list.splice(i, 1);
+  prev.children = prev.children || [];
+  prev.children.push(n);
+  prev.open = true;
+  save(); renderMain();
+}
+
+// parent = null at the top level, or { list, index } of the branch's place in its list
+function renderSteps(table, list, depth, parent, m, towers, useWave) {
+  const colCount = useWave ? 5 : 4;
+
+  list.forEach((n, i) => {
+    const row = el("tr", { className: isBranch(n) ? "branchrow" : "" });
+    const indent = depth * 18;
+
+    const controls = el("div", { className: "ctrls" },
+      el("button", { textContent: "↑", title: "Move up", onclick: () => moveNode(list, i, -1) }),
+      el("button", { textContent: "↓", title: "Move down", onclick: () => moveNode(list, i, 1) }),
+      el("button", {
+        textContent: "←", title: "Move out of this branch",
+        onclick: () => outdentNode(list, i, parent)
+      }),
+      el("button", {
+        textContent: "→", title: "Move into the branch above",
+        onclick: () => indentNode(list, i)
+      }),
+      isBranch(n)
+        ? confirmButton("✕", () => { list.splice(i, 1); save(); renderMain(); })
+        : el("button", {
+            textContent: "✕", title: "Delete",
+            onclick: () => { list.splice(i, 1); save(); renderMain(); }
+          })
+    );
+
+    // a branch (folder of steps)
+    if (isBranch(n)) {
+      n.children = n.children || [];
+      const head = el("div", {
+        className: "branchhead", style: "padding-left:" + indent + "px"
+      },
+        el("button", {
+          className: "btoggle", title: "Open or close",
+          textContent: n.open === false ? "▸" : "▾",
+          onclick: () => { n.open = (n.open === false); save(); renderMain(); }
+        }),
+        el("input", {
+          className: "btitle", value: n.title || "",
+          placeholder: "Branch name (e.g. Early game)",
+          oninput: e => { n.title = e.target.value; save(); }
+        }),
+        ...(useWave ? [waveInput(n)] : []),
+        el("button", {
+          textContent: "+ step",
+          onclick: () => { n.children.push(newStep()); n.open = true; save(); renderMain(); }
+        }),
+        el("button", {
+          textContent: "+ branch",
+          onclick: () => { n.children.push(newBranch()); n.open = true; save(); renderMain(); }
+        }),
+        controls
+      );
+      row.append(el("td", { colSpan: colCount }, head));
+      table.append(row);
+      if (n.open !== false) {
+        renderSteps(table, n.children, depth + 1, { list, index: i }, m, towers, useWave);
+      }
+      return;
+    }
+
+    // a normal step
+    const def = ACTIONS.find(a => a.id === n.action);
+    const cells = [];
+
+    if (useWave) cells.push(el("td", {}, waveInput(n)));
+    cells.push(el("td", {}, actionSelect(n)));
+
+    const details = el("div", { className: "details" });
+    if (def) def.fields.forEach(f => details.append(fieldFor(f, n, m, towers)));
+    cells.push(el("td", {}, details));
+
+    cells.push(el("td", {}, el("input", {
+      value: n.notes || "",
+      oninput: e => { n.notes = e.target.value; save(); }
+    })));
+    cells.push(el("td", {}, controls));
+
+    cells[0].style.paddingLeft = (4 + indent) + "px";
+    if (def && def.fields.includes("color") && n.color) {
+      cells[0].style.boxShadow = "inset 5px 0 0 " + n.color;
+    }
+
+    row.append(...cells);
+    table.append(row);
+  });
 }
 
 /* ---------- Export as image ---------- */
@@ -1203,42 +1515,69 @@ async function exportImage(m, type) {
       y += mh + 24;
     }
 
-    // strategy (build order)
-    if (m.steps.length) {
+        // strategy (build order, with branches)
+    const useWave = m.useWave !== false;
+    const flat = flattenSteps(m.steps);
+    if (flat.length) {
       head("Strategy");
+      const cols = useWave
+        ? { wave: [14, 60], action: [84, 150], details: [244, 468], notes: [724, 386] }
+        : { action: [14, 150], details: [174, 520], notes: [704, 406] };
+      const labels = useWave
+        ? [["Wave", 14], ["Action", 84], ["Details", 244], ["Notes", 724]]
+        : [["Action", 14], ["Details", 174], ["Notes", 704]];
+
       if (draw) {
         ctx.fillStyle = C.field;
         ctx.fillRect(PAD, y, inner, 30);
         ctx.fillStyle = C.muted;
       }
       ctx.font = "bold 14px " + FONT;
-      if (draw) {
-        [["Wave", 14], ["Action", 84], ["Details", 244], ["Notes", 724]]
-          .forEach(([t, cx]) => ctx.fillText(t, PAD + cx, y + 8));
-      }
+      if (draw) labels.forEach(([t, cx]) => ctx.fillText(t, PAD + cx, y + 8));
       y += 30;
 
-      m.steps.forEach(s => {
+      flat.forEach(({ node: s, depth }) => {
+        const ind = depth * 16;
+
+        if (isBranch(s)) {
+          const title = (s.title || "Branch") + (useWave && s.wave ? "   (wave " + s.wave + ")" : "");
+          ctx.font = "bold 17px " + FONT;
+          const tl = wrap(ctx, title, inner - ind - 30);
+          const rh = tl.length * 24 + 14;
+          if (draw) {
+            ctx.fillStyle = C.field;
+            ctx.fillRect(PAD + ind, y, inner - ind, rh);
+            ctx.fillStyle = "#4f9cff";
+            ctx.fillRect(PAD + ind, y, 4, rh);
+            ctx.fillStyle = C.text;
+            tl.forEach((ln, i) => ctx.fillText(ln, PAD + ind + 16, y + 8 + i * 24));
+          }
+          y += rh;
+          return;
+        }
+
         const sum = stepSummary(s, m);
         ctx.font = "16px " + FONT;
-        const wl = wrap(ctx, s.wave || "", 60);
-        const al = wrap(ctx, sum.label, 150);
-        const dl = wrap(ctx, sum.details, 468);
-        const nl = wrap(ctx, s.notes || "", 386);
+        const wl = useWave ? wrap(ctx, s.wave || "", cols.wave[1]) : [];
+        const al = wrap(ctx, sum.label, cols.action[1]);
+        const dl = wrap(ctx, sum.details, cols.details[1]);
+        const nl = wrap(ctx, s.notes || "", cols.notes[1]);
         const lines = Math.max(wl.length, al.length, dl.length, nl.length, 1);
         const rh = lines * 22 + 16;
         if (draw) {
           ctx.fillStyle = C.panel;
-          ctx.fillRect(PAD, y, inner, rh);
+          ctx.fillRect(PAD + ind, y, inner - ind, rh);
           ctx.fillStyle = C.border;
-          ctx.fillRect(PAD, y + rh - 1, inner, 1);
+          ctx.fillRect(PAD + ind, y + rh - 1, inner - ind, 1);
           const def = ACTIONS.find(a => a.id === s.action);
           if (def && def.fields.includes("color") && s.color) {
             ctx.fillStyle = s.color;
-            ctx.fillRect(PAD, y, 6, rh);
+            ctx.fillRect(PAD + ind, y, 6, rh);
           }
           ctx.fillStyle = C.text;
-          [[wl, 14], [al, 84], [dl, 244], [nl, 724]].forEach(([ls, cx]) => {
+          const groups = [[al, cols.action[0]], [dl, cols.details[0]], [nl, cols.notes[0]]];
+          if (useWave) groups.unshift([wl, cols.wave[0]]);
+          groups.forEach(([ls, cx]) => {
             ls.forEach((ln, i) => ctx.fillText(ln, PAD + cx, y + 8 + i * 22));
           });
         }
@@ -1259,7 +1598,20 @@ async function exportImage(m, type) {
       ctx.fillText(creditText(m), W / 2, y);
       ctx.restore();
     }
-    y += 22;
+    y += 24;
+    ctx.font = "14px " + FONT;
+    extraCredits(m).forEach(line => {
+      wrap(ctx, line, inner).forEach(ln => {
+        if (draw) {
+          ctx.save();
+          ctx.textAlign = "center";
+          ctx.fillStyle = C.muted;
+          ctx.fillText(ln, W / 2, y);
+          ctx.restore();
+        }
+        y += 20;
+      });
+    });
     return y + PAD;
   }
 
@@ -1293,31 +1645,142 @@ async function exportImage(m, type) {
   });
 }
 
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildDocHtml(m) {
+  const useWave = m.useWave !== false;
+  const size = gameOf(m).loadoutSize || 5;
+  const mp = (gameOf(m).maps || []).find(x => x.name === m.map);
+  const cell = "border:1px solid #999;padding:4px 8px;";
+  const colCount = (useWave ? 1 : 0) + 4;
+  let h = "";
+
+  h += "<h1>" + esc(m.name || "Untitled strategy") + "</h1>";
+  if (m.author) h += "<p>by " + esc(m.author) + "</p>";
+  if (m.notes && m.notes.trim()) h += "<p>" + esc(m.notes).replace(/\n/g, "<br>") + "</p>";
+
+  h += "<h2>Loadout</h2><ul>";
+  m.loadout.slice(0, size).forEach(sl => {
+    let line = sl.tower || "(empty slot)";
+    if (sl.sub === "optional") line += " - optional";
+    else if (sl.sub === "bait") line += " - bait";
+    else if (sl.sub === "change") line += " - can change to " + (sl.swap || "?");
+    h += "<li>" + esc(line) + "</li>";
+  });
+  h += "</ul>";
+
+  if (mp) h += "<h2>Map</h2><p>" + esc(mp.name) + "</p>";
+
+  const flat = flattenSteps(m.steps);
+  if (flat.length) {
+    h += "<h2>Strategy</h2>";
+    h += '<table style="border-collapse:collapse">';
+    h += '<tr><th style="' + cell + 'background-color:#eeeeee"></th>';
+    if (useWave) h += '<th style="' + cell + 'background-color:#eeeeee">Wave</th>';
+    ["Action", "Details", "Notes"].forEach(t => {
+      h += '<th style="' + cell + 'background-color:#eeeeee">' + t + "</th>";
+    });
+    h += "</tr>";
+
+    flat.forEach(({ node: s, depth }) => {
+      if (isBranch(s)) {
+        const title = (s.title || "Branch") + (useWave && s.wave ? " (wave " + s.wave + ")" : "");
+        h += '<tr><td colspan="' + colCount + '" style="' + cell +
+          "background-color:#dde6f5;font-weight:bold;padding-left:" + (8 + depth * 16) + 'px">' +
+          esc(title) + "</td></tr>";
+        return;
+      }
+      const sum = stepSummary(s, m);
+      const def = ACTIONS.find(a => a.id === s.action);
+      const color = def && def.fields.includes("color") && s.color ? s.color : "";
+      const pad = "&nbsp;".repeat(depth * 4);
+      h += "<tr>";
+      h += '<td style="' + cell + (color ? "background-color:" + color + ";" : "") + 'width:14px">&nbsp;</td>';
+      if (useWave) h += '<td style="' + cell + '">' + esc(s.wave) + "</td>";
+      h += '<td style="' + cell + '">' + pad + esc(sum.label) + "</td>";
+      h += '<td style="' + cell + '">' + esc(sum.details) + "</td>";
+      h += '<td style="' + cell + '">' + esc(s.notes) + "</td>";
+      h += "</tr>";
+    });
+    h += "</table>";
+  }
+
+  h += "<hr><p>" + esc(creditText(m)) + "</p>";
+  extraCredits(m).forEach(c => { h += "<p>" + esc(c) + "</p>"; });
+  return h;
+}
+
+async function copyForDocs(m) {
+  const html = buildDocHtml(m);
+
+  // plain-text version for places that don't take formatting
+  const tmp = document.createElement("div");
+  tmp.style.cssText = "position:fixed;left:-9999px;top:0;";
+  tmp.innerHTML = html;
+  document.body.append(tmp);
+  const plain = tmp.innerText;
+  tmp.remove();
+
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([plain], { type: "text/plain" })
+    })]);
+    return;
+  } catch (e) {}
+
+  // fallback: select a hidden copy and use the older copy command
+  const box = document.createElement("div");
+  box.contentEditable = "true";
+  box.style.cssText = "position:fixed;left:-9999px;top:0;";
+  box.innerHTML = html;
+  document.body.append(box);
+  const range = document.createRange();
+  range.selectNodeContents(box);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const ok = document.execCommand("copy");
+  sel.removeAllRanges();
+  box.remove();
+  if (!ok) throw new Error("The browser blocked copying.");
+}
+
 function exportBar(m) {
   const bar = el("div", { className: "exportbar" });
   const status = el("span", { className: "hint" });
-  bar.append(el("span", { textContent: "Export image:" }));
-  [["png", "Save PNG"], ["jpeg", "Save JPEG"]].forEach(([type, label]) => {
-    bar.append(el("button", {
+  bar.append(el("span", { textContent: "Export:" }));
+
+  function run(label, work, doneText) {
+    return el("button", {
       textContent: label,
       onclick: async () => {
-        status.textContent = "Making image...";
+        status.textContent = "Working...";
         try {
-          await exportImage(m, type);
-          status.textContent = "Done.";
-          setTimeout(() => { status.textContent = ""; }, 2500);
+          await work();
+          status.textContent = doneText;
+          setTimeout(() => { status.textContent = ""; }, 5000);
         } catch (e) {
           status.textContent = "";
           openModal({
-            title: "Couldn't make the image",
+            title: "That didn't work",
             text: String((e && e.message) || e),
             cancel: false
           });
         }
       }
-    }));
-  });
-  bar.append(status);
+    });
+  }
+
+  bar.append(
+    run("Save PNG", () => exportImage(m, "png"), "Done."),
+    run("Save JPEG", () => exportImage(m, "jpeg"), "Done."),
+    run("Copy for Google Docs", () => copyForDocs(m),
+      "Copied! Open a Google Doc and press Ctrl+V."),
+    status
+  );
   return bar;
 }
 
