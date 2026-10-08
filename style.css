@@ -513,3 +513,10 @@ button.primary:hover {
   font-size: 0.8em;
   color: var(--muted);
 }
+
+.exportbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}

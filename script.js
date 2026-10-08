@@ -821,6 +821,8 @@ function renderMain() {
   ));
   main.append(creditLine);
 
+  main.append(exportBar(m));
+
   main.append(renderBoard(m));
 
   main.append(el("textarea", {
@@ -897,6 +899,426 @@ function moveStep(m, i, dir) {
   if (j < 0 || j >= m.steps.length) return;
   [m.steps[i], m.steps[j]] = [m.steps[j], m.steps[i]];
   save(); renderMain();
+}
+
+/* ---------- Export as image ---------- */
+// Draws one stroke onto a canvas of size w x h (same look as the page)
+function drawPaintStroke(ctx, st, w, h) {
+  const scale = w / 1000;
+  const pts = st.p.map(([x, y]) => [x * w, y * h]);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (st.t === "lasso") {
+    if (pts.length >= 2) {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.strokeStyle = st.c;
+      ctx.lineWidth = 2 * scale;
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = st.c;
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+    }
+  } else {
+    ctx.globalCompositeOperation = st.t === "erase" ? "destination-out" : "source-over";
+    ctx.globalAlpha = st.t === "erase" ? 1 : 0.6;
+    ctx.strokeStyle = st.c;
+    ctx.fillStyle = st.c;
+    ctx.lineWidth = st.s * scale;
+    ctx.beginPath();
+    if (pts.length === 1) {
+      ctx.arc(pts[0][0], pts[0][1], (st.s * scale) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Loads a picture so it can be drawn into the export (null if it can't be)
+function loadImg(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.referrerPolicy = "no-referrer";
+    const timer = setTimeout(() => resolve(null), 8000);
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    // web pictures get a unique address so the browser doesn't reuse a copy that blocks drawing
+    img.src = /^https?:/.test(url)
+      ? url + (url.includes("?") ? "&" : "?") + "export=" + Date.now()
+      : url;
+  });
+}
+
+async function loadFirst(urls) {
+  for (const u of urls) {
+    const img = await loadImg(u);
+    if (img) return img;
+  }
+  return null;
+}
+
+// Text for one build-order row
+function stepSummary(s, m) {
+  const def = ACTIONS.find(a => a.id === s.action);
+  if (!def) return { label: "", details: "" };
+  const parts = [];
+  def.fields.forEach(f => {
+    if (f === "tower" && s.tower) parts.push(s.tower);
+    if (f === "path") {
+      if (pathCount(m, s.tower) === 1) {
+        if (s.single !== undefined && s.single !== "") parts.push("Lv " + s.single);
+      } else if ((s.top || "") !== "" || (s.bottom || "") !== "") {
+        parts.push((s.top || 0) + "-" + (s.bottom || 0));
+      }
+    }
+    if (f === "max" && s.max) parts.push(s.max === "single" ? "Max" : "Max " + s.max);
+    if (f === "time" && s.time) parts.push("@ " + s.time);
+    if (f === "text" && s.text) parts.push(s.text);
+  });
+  return { label: def.label, details: parts.join("  ·  ") };
+}
+
+async function exportImage(m, type) {
+  const towers = gameOf(m).towers || [];
+  const W = 1200, PAD = 40, SCALE = 2;
+  const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  const C = {
+    bg: "#121212", panel: "#1b1b1f", field: "#24242a", border: "#35353d",
+    text: "#e6e6e6", muted: "#9a9aa5"
+  };
+  const size = gameOf(m).loadoutSize || 5;
+  const slots = m.loadout.slice(0, size);
+
+  // 1. load the pictures
+  const slotImgs = await Promise.all(slots.map(sl => {
+    if (!sl.tower || isSpecial(sl.tower)) return null;
+    const t = towers.find(x => x.name === sl.tower);
+    const urls = ["images/" + m.game + "/" + slug(sl.tower) + ".png"];
+    if (t && t.img) urls.push(t.img);
+    return loadFirst(urls);
+  }));
+
+  const mp = (gameOf(m).maps || []).find(x => x.name === m.map);
+  let mapImg = null;
+  if (mp) {
+    const urls = ["images/" + m.game + "/maps/" + slug(mp.name) + ".png"];
+    if (mp.img) urls.push(mp.img);
+    mapImg = await loadFirst(urls);
+  }
+
+  // 2. helpers
+  function wrap(ctx, text, maxW) {
+    const out = [];
+    String(text || "").split("\n").forEach(par => {
+      const words = par.split(/\s+/).filter(Boolean);
+      if (!words.length) { out.push(""); return; }
+      let line = "";
+      words.forEach(w => {
+        const test = line ? line + " " + w : w;
+        if (ctx.measureText(test).width > maxW && line) { out.push(line); line = w; }
+        else line = test;
+      });
+      out.push(line);
+    });
+    return out;
+  }
+
+  function rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawSlot(ctx, sl, img, x, y, w, h) {
+    ctx.fillStyle = C.panel;
+    rr(ctx, x, y, w, h, 8);
+    ctx.fill();
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    rr(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 8);
+    ctx.stroke();
+
+    const bx = x + (w - 100) / 2, by = y + 12;
+    ctx.save();
+    ctx.textAlign = "center";
+
+    if (!sl.tower) {
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = C.border;
+      rr(ctx, bx, by, 100, 100, 8);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (isSpecial(sl.tower)) {
+      const colors = { DPS: "#1f4f8f", Bait: "#8f5a1f" };
+      if (colors[sl.tower]) {
+        ctx.fillStyle = colors[sl.tower];
+        rr(ctx, bx, by, 100, 100, 8);
+        ctx.fill();
+        ctx.fillStyle = C.text;
+      } else {
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = C.border;
+        rr(ctx, bx, by, 100, 100, 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = C.muted;
+      }
+      ctx.font = "bold 20px " + FONT;
+      ctx.fillText(sl.tower.toUpperCase(), bx + 50, by + 40);
+    } else if (img) {
+      const k = Math.min(100 / img.width, 100 / img.height);
+      const iw = img.width * k, ih = img.height * k;
+      ctx.drawImage(img, bx + (100 - iw) / 2, by + (100 - ih) / 2, iw, ih);
+    } else {
+      // no picture: colored badge with initials
+      let hue = 0;
+      for (const c of sl.tower) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+      const words = sl.tower.split(/\s+/).filter(Boolean);
+      const text = (words.length > 1
+        ? words.map(wd => wd[0]).join("").slice(0, 3)
+        : sl.tower.slice(0, 3)).toUpperCase();
+      ctx.fillStyle = "hsl(" + hue + ", 45%, 32%)";
+      rr(ctx, bx, by, 100, 100, 8);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 30px " + FONT;
+      ctx.fillText(text, bx + 50, by + 34);
+    }
+
+    // name and sub-role
+    ctx.fillStyle = C.text;
+    ctx.font = "bold 14px " + FONT;
+    wrap(ctx, sl.tower || "(empty slot)", w - 16).slice(0, 2)
+      .forEach((ln, i) => ctx.fillText(ln, x + w / 2, y + 122 + i * 18));
+
+    let sub = "";
+    if (sl.sub === "optional") sub = "Optional";
+    else if (sl.sub === "bait") sub = "Bait";
+    else if (sl.sub === "change") sub = "Can change to " + (sl.swap || "?");
+    if (sub) {
+      ctx.fillStyle = C.muted;
+      ctx.font = "13px " + FONT;
+      wrap(ctx, sub, w - 16).slice(0, 2)
+        .forEach((ln, i) => ctx.fillText(ln, x + w / 2, y + 160 + i * 16));
+    }
+    ctx.restore();
+  }
+
+  // 3. one layout function, used to measure first and then to draw
+  function layout(ctx, draw) {
+    let y = PAD;
+    const inner = W - PAD * 2;
+    ctx.textBaseline = "top";
+
+    function head(text) {
+      ctx.font = "bold 22px " + FONT;
+      if (draw) {
+        ctx.fillStyle = C.text;
+        ctx.fillText(text, PAD, y);
+        ctx.fillStyle = C.border;
+        ctx.fillRect(PAD, y + 32, inner, 1);
+      }
+      y += 44;
+    }
+
+    // title
+    ctx.font = "bold 38px " + FONT;
+    wrap(ctx, m.name || "Untitled strategy", inner).forEach(line => {
+      if (draw) { ctx.fillStyle = C.text; ctx.fillText(line, PAD, y); }
+      y += 46;
+    });
+
+    // author
+    if (m.author) {
+      ctx.font = "20px " + FONT;
+      if (draw) { ctx.fillStyle = C.muted; ctx.fillText("by " + m.author, PAD, y); }
+      y += 30;
+    }
+    y += 6;
+
+    // description
+    if (m.notes && m.notes.trim()) {
+      ctx.font = "18px " + FONT;
+      wrap(ctx, m.notes, inner).forEach(line => {
+        if (draw) { ctx.fillStyle = C.text; ctx.fillText(line, PAD, y); }
+        y += 26;
+      });
+      y += 10;
+    }
+    y += 14;
+
+    // loadout
+    head("Loadout");
+    const n = Math.max(slots.length, 1);
+    const gap = 12;
+    const cw = (inner - gap * (n - 1)) / n;
+    const ch = 200;
+    slots.forEach((sl, i) => {
+      if (draw) drawSlot(ctx, sl, slotImgs[i], PAD + i * (cw + gap), y, cw, ch);
+    });
+    y += ch + 24;
+
+    // map
+    if (mp || m.paint.length) {
+      head(mp ? "Map: " + mp.name : "Map");
+      const mw = inner;
+      const mh = mapImg ? mw * mapImg.height / mapImg.width : mw * 9 / 16;
+      if (draw) {
+        ctx.fillStyle = C.panel;
+        ctx.fillRect(PAD, y, mw, mh);
+        if (mapImg) {
+          ctx.drawImage(mapImg, PAD, y, mw, mh);
+        } else if (mp) {
+          ctx.save();
+          ctx.textAlign = "center";
+          ctx.fillStyle = C.muted;
+          ctx.font = "16px " + FONT;
+          ctx.fillText("Map picture not available", PAD + mw / 2, y + mh / 2 - 8);
+          ctx.restore();
+        }
+        if (m.paint.length) {
+          const off = document.createElement("canvas");
+          off.width = Math.round(mw * SCALE);
+          off.height = Math.round(mh * SCALE);
+          const octx = off.getContext("2d");
+          m.paint.forEach(st => drawPaintStroke(octx, st, off.width, off.height));
+          ctx.drawImage(off, PAD, y, mw, mh);
+        }
+        ctx.strokeStyle = C.border;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(PAD + 0.5, y + 0.5, mw - 1, mh - 1);
+      }
+      y += mh + 24;
+    }
+
+    // strategy (build order)
+    if (m.steps.length) {
+      head("Strategy");
+      if (draw) {
+        ctx.fillStyle = C.field;
+        ctx.fillRect(PAD, y, inner, 30);
+        ctx.fillStyle = C.muted;
+      }
+      ctx.font = "bold 14px " + FONT;
+      if (draw) {
+        [["Wave", 14], ["Action", 84], ["Details", 244], ["Notes", 724]]
+          .forEach(([t, cx]) => ctx.fillText(t, PAD + cx, y + 8));
+      }
+      y += 30;
+
+      m.steps.forEach(s => {
+        const sum = stepSummary(s, m);
+        ctx.font = "16px " + FONT;
+        const wl = wrap(ctx, s.wave || "", 60);
+        const al = wrap(ctx, sum.label, 150);
+        const dl = wrap(ctx, sum.details, 468);
+        const nl = wrap(ctx, s.notes || "", 386);
+        const lines = Math.max(wl.length, al.length, dl.length, nl.length, 1);
+        const rh = lines * 22 + 16;
+        if (draw) {
+          ctx.fillStyle = C.panel;
+          ctx.fillRect(PAD, y, inner, rh);
+          ctx.fillStyle = C.border;
+          ctx.fillRect(PAD, y + rh - 1, inner, 1);
+          const def = ACTIONS.find(a => a.id === s.action);
+          if (def && def.fields.includes("color") && s.color) {
+            ctx.fillStyle = s.color;
+            ctx.fillRect(PAD, y, 6, rh);
+          }
+          ctx.fillStyle = C.text;
+          [[wl, 14], [al, 84], [dl, 244], [nl, 724]].forEach(([ls, cx]) => {
+            ls.forEach((ln, i) => ctx.fillText(ln, PAD + cx, y + 8 + i * 22));
+          });
+        }
+        y += rh;
+      });
+      y += 10;
+    }
+
+    // credits
+    y += 16;
+    if (draw) { ctx.fillStyle = C.border; ctx.fillRect(PAD, y, inner, 1); }
+    y += 14;
+    ctx.font = "16px " + FONT;
+    if (draw) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = C.muted;
+      ctx.fillText(creditText(m), W / 2, y);
+      ctx.restore();
+    }
+    y += 22;
+    return y + PAD;
+  }
+
+  // 4. measure, then draw for real
+  const H = layout(document.createElement("canvas").getContext("2d"), false);
+  const canvas = document.createElement("canvas");
+  canvas.width = W * SCALE;
+  canvas.height = Math.ceil(H * SCALE);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(SCALE, SCALE);
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+  layout(ctx, true);
+
+  // 5. download
+  await new Promise((resolve, reject) => {
+    try {
+      canvas.toBlob(blob => {
+        if (!blob) { reject(new Error("The browser couldn't make the file.")); return; }
+        const a = el("a", {
+          href: URL.createObjectURL(blob),
+          download: (slug(m.name || "") || "strategy") + (type === "jpeg" ? ".jpg" : ".png")
+        });
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        resolve();
+      }, type === "jpeg" ? "image/jpeg" : "image/png", 0.92);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function exportBar(m) {
+  const bar = el("div", { className: "exportbar" });
+  const status = el("span", { className: "hint" });
+  bar.append(el("span", { textContent: "Export image:" }));
+  [["png", "Save PNG"], ["jpeg", "Save JPEG"]].forEach(([type, label]) => {
+    bar.append(el("button", {
+      textContent: label,
+      onclick: async () => {
+        status.textContent = "Making image...";
+        try {
+          await exportImage(m, type);
+          status.textContent = "Done.";
+          setTimeout(() => { status.textContent = ""; }, 2500);
+        } catch (e) {
+          status.textContent = "";
+          openModal({
+            title: "Couldn't make the image",
+            text: String((e && e.message) || e),
+            cancel: false
+          });
+        }
+      }
+    }));
+  });
+  bar.append(status);
+  return bar;
 }
 
 /* ---------- Export / Import ---------- */
